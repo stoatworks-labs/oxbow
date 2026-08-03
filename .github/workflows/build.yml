@@ -1,0 +1,49 @@
+# Build on both platforms that matter: macOS (development, Resolume-adjacent
+# testing) and Windows x64 (the vMix target; runs under emulation on Windows
+# on ARM too). No release packaging yet — this exists to keep the Windows
+# port honest from the first commit that has one.
+
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            name: macos
+          - os: windows-latest
+            name: windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Smoke test (no plugin, no network)
+        shell: bash
+        run: |
+          BIN=build/oxbow
+          [ -f build/Release/oxbow.exe ] && BIN=build/Release/oxbow.exe
+          # Usage text on no args; exit code 2 by design.
+          "$BIN" || [ $? -eq 2 ]
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oxbow-${{ matrix.name }}
+          path: |
+            build/oxbow
+            build/Release/oxbow.exe
+          if-no-files-found: error

@@ -17,11 +17,9 @@
 #include <string>
 #include <vector>
 
-#if defined(__APPLE__)
-#include <OpenGL/gl3.h>
-#endif
-
 #include <ffgl/FFGL.h>
+
+#include "gl/gl_headers.h"
 
 #include "app/pump.h"
 #include "ffgl/ffgl_host.h"

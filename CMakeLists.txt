@@ -10,11 +10,16 @@ add_executable(oxbow
   src/app/pump.cpp
   src/core/dylib.cpp
   src/ffgl/ffgl_host.cpp
-  src/gl/gl_context_mac.cpp
   src/io/ndi.cpp
   src/io/omt.cpp
   src/io/video_io.cpp
 )
+
+if(APPLE)
+  target_sources(oxbow PRIVATE src/gl/gl_context_mac.cpp)
+elseif(WIN32)
+  target_sources(oxbow PRIVATE src/gl/gl_context_win.cpp)
+endif()
 
 target_include_directories(oxbow PRIVATE
   src
@@ -26,4 +31,17 @@ target_include_directories(oxbow PRIVATE
 if(APPLE)
   target_compile_definitions(oxbow PRIVATE GL_SILENCE_DEPRECATION)
   target_link_libraries(oxbow PRIVATE "-framework OpenGL")
+elseif(WIN32)
+  # The FFGL SDK's own vendored GLEW: headers plus a static MSVC x64 lib.
+  set(GLEW_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ffgl/deps/glew-2.1.0)
+  target_include_directories(oxbow PRIVATE ${GLEW_ROOT}/include)
+  target_compile_definitions(oxbow PRIVATE GLEW_STATIC NOMINMAX)
+  target_link_libraries(oxbow PRIVATE
+    ${GLEW_ROOT}/lib/Release/x64/glew32s.lib
+    opengl32
+    user32
+    gdi32
+  )
+  # Sources are UTF-8; MSVC guesses the local codepage without this.
+  target_compile_options(oxbow PRIVATE /utf-8)
 endif()

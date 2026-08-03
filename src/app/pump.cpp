@@ -20,11 +20,9 @@
 #include <memory>
 #include <thread>
 
-#if defined(__APPLE__)
-#include <OpenGL/gl3.h>
-#endif
-
 #include <ffgl/FFGL.h>
+
+#include "gl/gl_headers.h"
 
 #include "ffgl/ffgl_host.h"
 #include "gl/gl_context.h"
