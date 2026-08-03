@@ -296,6 +296,8 @@ int main(int argc, char** argv) {
         if (const char* v = nextArg(i)) options.outProtocol = v;
       } else if (std::strcmp(argv[i], "--port") == 0) {
         if (const char* v = nextArg(i)) options.controlPort = std::atoi(v);
+      } else if (std::strcmp(argv[i], "--bind") == 0) {
+        if (const char* v = nextArg(i)) options.controlBind = v;
       } else if (std::strcmp(argv[i], "--plugin") == 0) {
         if (const char* v = nextArg(i)) {
           EffectSpec spec;
