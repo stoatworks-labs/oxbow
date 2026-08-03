@@ -5,6 +5,12 @@
 //   oxbow probe <plugin>     Load an FFGL plugin and print its metadata.
 //   oxbow selftest <plugin>  Probe, then instantiate offscreen, run frames
 //                            through it and report what came back.
+//   oxbow list               Discover NDI sources on the network.
+//   oxbow run --in A --out B --plugin P [--set N=V …] [--plugin …]
+//                            The loop: receive A, process, publish B.
+//   oxbow send-test --out N  Publish a built-in moving test pattern.
+//   oxbow recv-probe --in N [--frames F]
+//                            Receive F frames and print fingerprints.
 
 #include <cstdio>
 #include <cstring>
@@ -17,8 +23,10 @@
 
 #include <ffgl/FFGL.h>
 
+#include "app/pump.h"
 #include "ffgl/ffgl_host.h"
 #include "gl/gl_context.h"
+#include "io/ndi.h"
 
 namespace oxbow {
 namespace {
@@ -200,10 +208,91 @@ int selftest(const std::string& path, const std::vector<std::string>& sets) {
   return pass ? 0 : 1;
 }
 
+int listSources() {
+  std::string error;
+  auto sources = ndiListSources(3000, error);
+  if (!error.empty()) {
+    std::fprintf(stderr, "list: %s\n", error.c_str());
+    return 1;
+  }
+  for (const auto& source : sources)
+    std::printf("%s\t%s\n", source.name.c_str(), source.url.c_str());
+  std::printf("%zu source(s)\n", sources.size());
+  return 0;
+}
+
 }  // namespace
 }  // namespace oxbow
 
 int main(int argc, char** argv) {
+  using oxbow::EffectSpec;
+  using oxbow::PumpOptions;
+
+  auto nextArg = [&](int& i) -> const char* {
+    return i + 1 < argc ? argv[++i] : nullptr;
+  };
+
+  if (argc >= 2 && std::strcmp(argv[1], "list") == 0)
+    return oxbow::listSources();
+
+  if (argc >= 2 && std::strcmp(argv[1], "send-test") == 0) {
+    std::string out = "oxbow-test";
+    for (int i = 2; i < argc; ++i)
+      if (std::strcmp(argv[i], "--out") == 0)
+        if (const char* v = nextArg(i)) out = v;
+    return oxbow::runTestSender(out);
+  }
+
+  if (argc >= 2 && std::strcmp(argv[1], "recv-probe") == 0) {
+    std::string in;
+    std::string dump;
+    int frames = 30;
+    for (int i = 2; i < argc; ++i) {
+      if (std::strcmp(argv[i], "--in") == 0) {
+        if (const char* v = nextArg(i)) in = v;
+      } else if (std::strcmp(argv[i], "--frames") == 0) {
+        if (const char* v = nextArg(i)) frames = std::atoi(v);
+      } else if (std::strcmp(argv[i], "--dump") == 0) {
+        if (const char* v = nextArg(i)) dump = v;
+      }
+    }
+    if (in.empty()) {
+      std::fprintf(stderr, "recv-probe: --in is required\n");
+      return 2;
+    }
+    return oxbow::runProbe(in, frames, 5000, dump);
+  }
+
+  if (argc >= 2 && std::strcmp(argv[1], "run") == 0) {
+    PumpOptions options;
+    for (int i = 2; i < argc; ++i) {
+      if (std::strcmp(argv[i], "--in") == 0) {
+        if (const char* v = nextArg(i)) options.inName = v;
+      } else if (std::strcmp(argv[i], "--out") == 0) {
+        if (const char* v = nextArg(i)) options.outName = v;
+      } else if (std::strcmp(argv[i], "--plugin") == 0) {
+        if (const char* v = nextArg(i)) {
+          EffectSpec spec;
+          spec.path = v;
+          options.effects.push_back(spec);
+        }
+      } else if (std::strcmp(argv[i], "--set") == 0) {
+        const char* v = nextArg(i);
+        if (v && !options.effects.empty()) {
+          const char* eq = std::strchr(v, '=');
+          if (eq)
+            options.effects.back().sets.emplace_back(
+                std::string(v, eq - v), std::strtof(eq + 1, nullptr));
+        }
+      }
+    }
+    if (options.inName.empty() || options.outName.empty()) {
+      std::fprintf(stderr, "run: --in and --out are required\n");
+      return 2;
+    }
+    return oxbow::runPump(options);
+  }
+
   if (argc == 3 && std::strcmp(argv[1], "probe") == 0)
     return oxbow::probe(argv[2]);
   if (argc >= 3 && std::strcmp(argv[1], "selftest") == 0) {
@@ -215,6 +304,10 @@ int main(int argc, char** argv) {
   }
   std::fprintf(stderr,
                "usage: oxbow probe <plugin>\n"
-               "       oxbow selftest <plugin> [--set Name=value ...]\n");
+               "       oxbow selftest <plugin> [--set Name=value ...]\n"
+               "       oxbow list\n"
+               "       oxbow run --in <source> --out <name> [--plugin <path> [--set N=V ...]]...\n"
+               "       oxbow send-test [--out <name>]\n"
+               "       oxbow recv-probe --in <source> [--frames <n>]\n");
   return 2;
 }

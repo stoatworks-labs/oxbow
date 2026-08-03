@@ -7,9 +7,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(oxbow
   src/app/main.cpp
+  src/app/pump.cpp
   src/core/dylib.cpp
   src/ffgl/ffgl_host.cpp
   src/gl/gl_context_mac.cpp
+  src/io/ndi.cpp
 )
 
 target_include_directories(oxbow PRIVATE
