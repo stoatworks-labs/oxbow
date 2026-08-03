@@ -8,8 +8,10 @@ your mixer, through a chain of FFGL plugins, and back in — like an oxbow, a
 loop in the river.
 
 **Status: early development.** The FFGL host core works (verified against nine
-real plugins); the NDI/OMT frame pump, chain configuration, and web UI are in
-progress. macOS first, Windows to follow.
+real plugins) and the frame pump runs at 60 fps over **NDI and OMT, in any
+combination per side** — NDI→NDI, OMT→OMT, and NDI→OMT all verified end to
+end. Chain configuration and the web UI are in progress. macOS first, Windows
+to follow.
 
 ## Build
 
@@ -23,12 +25,29 @@ cmake --build build
 ```
 oxbow probe <plugin>                          # load a plugin, print metadata
 oxbow selftest <plugin> [--set Name=value …]  # instantiate offscreen, render frames, report
+oxbow list [--proto ndi|omt]                  # discover sources
+oxbow run --in <source> --out <name>          # the loop
+          [--in-proto ndi|omt] [--out-proto ndi|omt]
+          [--plugin <path> [--set Name=value …]]…
+oxbow send-test [--out <name>] [--proto ndi|omt]   # built-in test pattern
+oxbow recv-probe --in <source> [--proto ndi|omt] [--dump out.ppm]
 ```
 
 `<plugin>` is a `.bundle` (macOS) or `.dll` (Windows) FFGL 2.x plugin.
+`--plugin` repeats to build a chain; `--set` applies to the plugin before it.
+
+## Runtimes
+
+Neither transport library is linked or bundled; both are found at run time:
+
+- **NDI**: install the NDI runtime (or Tools/SDK) from ndi.video. Not bundled
+  because the NDI licence is incompatible with this repository's MIT terms.
+- **OMT**: MIT — grab the binaries from
+  [libomtnet releases](https://github.com/openmediatransport/libomtnet/releases)
+  and put `libomt`, `libvmx`, and `libomtnet.dll` together on the library
+  path (or point `DYLD_LIBRARY_PATH`/`PATH` at them). Set `OXBOW_OMT_LOG=1`
+  for libomt's internal log on stderr.
 
 ## Licence
 
-MIT. The NDI runtime is not bundled — see the note at the top of
-`src/io/` once the pump lands, and `third_party/ndi/README.md`. OMT is MIT and
-its runtime can ship alongside.
+MIT.

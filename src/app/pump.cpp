@@ -28,7 +28,7 @@
 
 #include "ffgl/ffgl_host.h"
 #include "gl/gl_context.h"
-#include "io/ndi.h"
+#include "io/video_io.h"
 
 namespace oxbow {
 namespace {
@@ -37,6 +37,10 @@ std::atomic<bool> g_stop{false};
 
 void onSignal(int) { g_stop = true; }
 
+// Installed AFTER the transports are created: libomt embeds the .NET
+// runtime, which registers its own SIGINT/SIGTERM handling when it starts.
+// Registering first means being replaced — the process then ignores Ctrl-C
+// and lingers holding the OMT listen port.
 void installSignalHandlers() {
   std::signal(SIGINT, onSignal);
   std::signal(SIGTERM, onSignal);
@@ -126,8 +130,6 @@ bool rebuildInstances(std::vector<LoadedEffect>& effects, uint32_t width,
 }  // namespace
 
 int runPump(const PumpOptions& options) {
-  installSignalHandlers();
-
   std::string error;
   auto context = GlContext::create(error);
   if (!context || !context->makeCurrent()) {
@@ -149,20 +151,21 @@ int runPump(const PumpOptions& options) {
     effects.push_back(std::move(effect));
   }
 
-  auto receiver = NdiReceiver::connect(options.inName, options.discoverWaitMs,
-                                       error);
+  auto receiver = connectReceiver(options.inProtocol, options.inName,
+                                  options.discoverWaitMs, error);
   if (!receiver) {
     std::fprintf(stderr, "pump: %s\n", error.c_str());
     return 1;
   }
   std::printf("pump: receiving \"%s\"\n", receiver->sourceName().c_str());
 
-  auto sender = NdiSender::create(options.outName, error);
+  auto sender = createSender(options.outProtocol, options.outName, error);
   if (!sender) {
     std::fprintf(stderr, "pump: %s\n", error.c_str());
     return 1;
   }
   std::printf("pump: sending as \"%s\"\n", options.outName.c_str());
+  installSignalHandlers();
 
   ChainSurfaces surfaces;
   std::vector<uint8_t> ingest;// Bottom-up, tightly packed.
@@ -173,7 +176,7 @@ int runPump(const PumpOptions& options) {
   auto lastReport = start;
 
   while (!g_stop) {
-    const NdiReceiver::Captured captured = receiver->capture(
+    const VideoReceiver::Captured captured = receiver->capture(
         100, [&](const VideoFrame& frame) {
           const uint32_t w = (uint32_t)frame.width;
           const uint32_t h = (uint32_t)frame.height;
@@ -264,11 +267,11 @@ int runPump(const PumpOptions& options) {
             std::memcpy(&sendBuffer[(size_t)y * w * 4],
                         &readback[(size_t)(h - 1 - y) * w * 4], (size_t)w * 4);
           sender->sendVideo(sendBuffer.data(), w, h, frame.frameRateN,
-                            frame.frameRateD);
+                            frame.frameRateD, frame.timestamp);
           ++frames;
         });
 
-    if (captured == NdiReceiver::Captured::audio) {
+    if (captured == VideoReceiver::Captured::audio) {
       if (auto audio = receiver->takeAudio()) sender->sendAudio(*audio);
     }
 
@@ -287,14 +290,14 @@ int runPump(const PumpOptions& options) {
   return 0;
 }
 
-int runTestSender(const std::string& outName) {
-  installSignalHandlers();
+int runTestSender(const std::string& protocol, const std::string& outName) {
   std::string error;
-  auto sender = NdiSender::create(outName, error);
+  auto sender = createSender(protocol, outName, error);
   if (!sender) {
     std::fprintf(stderr, "send-test: %s\n", error.c_str());
     return 1;
   }
+  installSignalHandlers();
   constexpr int kWidth = 1280;
   constexpr int kHeight = 720;
   std::vector<uint8_t> pixels((size_t)kWidth * kHeight * 4);
@@ -321,7 +324,7 @@ int runTestSender(const std::string& outName) {
         p[3] = 255;
       }
     }
-    sender->sendVideo(pixels.data(), kWidth, kHeight, 60000, 1000);
+    sender->sendVideo(pixels.data(), kWidth, kHeight, 60000, 1000, -1);
     ++frame;
     const auto next = start + frame * std::chrono::nanoseconds(16666667);
     std::this_thread::sleep_until(next);
@@ -331,10 +334,10 @@ int runTestSender(const std::string& outName) {
   return 0;
 }
 
-int runProbe(const std::string& inName, int frames, unsigned waitMs,
-             const std::string& dumpPath) {
+int runProbe(const std::string& protocol, const std::string& inName,
+             int frames, unsigned waitMs, const std::string& dumpPath) {
   std::string error;
-  auto receiver = NdiReceiver::connect(inName, waitMs, error);
+  auto receiver = connectReceiver(protocol, inName, waitMs, error);
   if (!receiver) {
     std::fprintf(stderr, "recv-probe: %s\n", error.c_str());
     return 1;
@@ -377,7 +380,7 @@ int runProbe(const std::string& inName, int frames, unsigned waitMs,
       }
       ++received;
     });
-    idleMs = captured == NdiReceiver::Captured::none ? idleMs + 250 : 0;
+    idleMs = captured == VideoReceiver::Captured::none ? idleMs + 250 : 0;
   }
   return received >= frames ? 0 : 1;
 }

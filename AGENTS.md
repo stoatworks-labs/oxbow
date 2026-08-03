@@ -25,9 +25,11 @@ as an input. One added round trip ≈ 3–6 frames.
   ABI is one C entry point, `plugMain(opcode, FFMixed, instanceID)`; floats
   cross bit-cast into `FFMixed.UIntValue`. Structs come from the vendored SDK
   submodule at `third_party/ffgl` (same rev the fleet's plugins pin, b1afaf9).
-- `src/io/` — (pending) NDI/OMT receive and send; lift from
-  `~/Projects/weblinked/src/outputs/{ndi,omt}_output.cpp`. Note WebLinked's OMT
-  sender has never been verified against a real receiver.
+- `src/io/` — `video_io.h` is the protocol-neutral surface (BGRA VideoFrame,
+  planar-float AudioFrame — the native audio layout of BOTH transports, so
+  bridging is a memcpy); `ndi.cpp` and `omt.cpp` implement it, both
+  runtime-loaded. All four direction combinations are supported and NDI→NDI,
+  OMT→OMT, NDI→OMT are verified at 60 fps.
 - `src/app/` — CLI. `probe` and `selftest` exist and are the regression
   harness: `selftest` renders 120 frames offscreen and fails on GL errors or
   all-black output.
@@ -51,6 +53,19 @@ as an input. One added round trip ≈ 3–6 frames.
 - macOS FFGL plugins are `.bundle` directories; dlopen the single binary under
   `Contents/MacOS/`. Fleet test bundles live in each repo's `build/` dir
   (downpour, tinsel, porthole, …).
+- **libomt embeds the .NET runtime, and .NET replaces the process's
+  SIGINT/SIGTERM handlers when it starts.** Install signal handlers AFTER
+  creating the first OMT sender/receiver or Ctrl-C is swallowed and the
+  process lingers holding the OMT listen port (6400) — and the NEXT sender
+  then announces itself while the zombie owns the port, so receivers connect
+  to a source that never sends. If OMT "connects but no frames arrive", first
+  check `ps` for a stale oxbow and `lsof -iTCP:6400`.
+- NDI's bottom-up receive format (`BGRX_BGRA_flipped`) is **Windows-only** —
+  guarded by `#ifdef _WIN32` in the SDK header. Everywhere else frames arrive
+  top-down and the pump flips at ingest.
+- OMT testing on this Mac: runtime staged at `build/omt-runtime/`; run with
+  `DYLD_LIBRARY_PATH=$PWD/build/omt-runtime`. `OXBOW_OMT_LOG=1` turns on
+  libomt's internal log.
 
 ## Verify
 

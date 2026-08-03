@@ -12,6 +12,8 @@ add_executable(oxbow
   src/ffgl/ffgl_host.cpp
   src/gl/gl_context_mac.cpp
   src/io/ndi.cpp
+  src/io/omt.cpp
+  src/io/video_io.cpp
 )
 
 target_include_directories(oxbow PRIVATE

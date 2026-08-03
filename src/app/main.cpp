@@ -26,7 +26,7 @@
 #include "app/pump.h"
 #include "ffgl/ffgl_host.h"
 #include "gl/gl_context.h"
-#include "io/ndi.h"
+#include "io/video_io.h"
 
 namespace oxbow {
 namespace {
@@ -208,9 +208,9 @@ int selftest(const std::string& path, const std::vector<std::string>& sets) {
   return pass ? 0 : 1;
 }
 
-int listSources() {
+int listSourcesCommand(const std::string& protocol) {
   std::string error;
-  auto sources = ndiListSources(3000, error);
+  auto sources = listSources(protocol, 3000, error);
   if (!error.empty()) {
     std::fprintf(stderr, "list: %s\n", error.c_str());
     return 1;
@@ -232,20 +232,31 @@ int main(int argc, char** argv) {
     return i + 1 < argc ? argv[++i] : nullptr;
   };
 
-  if (argc >= 2 && std::strcmp(argv[1], "list") == 0)
-    return oxbow::listSources();
+  if (argc >= 2 && std::strcmp(argv[1], "list") == 0) {
+    std::string proto = "ndi";
+    for (int i = 2; i < argc; ++i)
+      if (std::strcmp(argv[i], "--proto") == 0)
+        if (const char* v = nextArg(i)) proto = v;
+    return oxbow::listSourcesCommand(proto);
+  }
 
   if (argc >= 2 && std::strcmp(argv[1], "send-test") == 0) {
     std::string out = "oxbow-test";
-    for (int i = 2; i < argc; ++i)
-      if (std::strcmp(argv[i], "--out") == 0)
+    std::string proto = "ndi";
+    for (int i = 2; i < argc; ++i) {
+      if (std::strcmp(argv[i], "--out") == 0) {
         if (const char* v = nextArg(i)) out = v;
-    return oxbow::runTestSender(out);
+      } else if (std::strcmp(argv[i], "--proto") == 0) {
+        if (const char* v = nextArg(i)) proto = v;
+      }
+    }
+    return oxbow::runTestSender(proto, out);
   }
 
   if (argc >= 2 && std::strcmp(argv[1], "recv-probe") == 0) {
     std::string in;
     std::string dump;
+    std::string proto = "ndi";
     int frames = 30;
     for (int i = 2; i < argc; ++i) {
       if (std::strcmp(argv[i], "--in") == 0) {
@@ -254,13 +265,15 @@ int main(int argc, char** argv) {
         if (const char* v = nextArg(i)) frames = std::atoi(v);
       } else if (std::strcmp(argv[i], "--dump") == 0) {
         if (const char* v = nextArg(i)) dump = v;
+      } else if (std::strcmp(argv[i], "--proto") == 0) {
+        if (const char* v = nextArg(i)) proto = v;
       }
     }
     if (in.empty()) {
       std::fprintf(stderr, "recv-probe: --in is required\n");
       return 2;
     }
-    return oxbow::runProbe(in, frames, 5000, dump);
+    return oxbow::runProbe(proto, in, frames, 5000, dump);
   }
 
   if (argc >= 2 && std::strcmp(argv[1], "run") == 0) {
@@ -270,6 +283,10 @@ int main(int argc, char** argv) {
         if (const char* v = nextArg(i)) options.inName = v;
       } else if (std::strcmp(argv[i], "--out") == 0) {
         if (const char* v = nextArg(i)) options.outName = v;
+      } else if (std::strcmp(argv[i], "--in-proto") == 0) {
+        if (const char* v = nextArg(i)) options.inProtocol = v;
+      } else if (std::strcmp(argv[i], "--out-proto") == 0) {
+        if (const char* v = nextArg(i)) options.outProtocol = v;
       } else if (std::strcmp(argv[i], "--plugin") == 0) {
         if (const char* v = nextArg(i)) {
           EffectSpec spec;
@@ -305,9 +322,10 @@ int main(int argc, char** argv) {
   std::fprintf(stderr,
                "usage: oxbow probe <plugin>\n"
                "       oxbow selftest <plugin> [--set Name=value ...]\n"
-               "       oxbow list\n"
-               "       oxbow run --in <source> --out <name> [--plugin <path> [--set N=V ...]]...\n"
-               "       oxbow send-test [--out <name>]\n"
-               "       oxbow recv-probe --in <source> [--frames <n>]\n");
+               "       oxbow list [--proto ndi|omt]\n"
+               "       oxbow run --in <source> --out <name> [--in-proto ndi|omt]\n"
+               "                 [--out-proto ndi|omt] [--plugin <path> [--set N=V ...]]...\n"
+               "       oxbow send-test [--out <name>] [--proto ndi|omt]\n"
+               "       oxbow recv-probe --in <source> [--frames <n>] [--proto ndi|omt] [--dump <ppm>]\n");
   return 2;
 }

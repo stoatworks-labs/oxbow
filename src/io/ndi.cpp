@@ -6,10 +6,10 @@
 // flat symbols work across NDI 5 and 6 runtimes where the versioned
 // NDIlib_v6_load() struct would not.
 //
-// The receiver asks for BGRX_BGRA_flipped so video arrives bottom-up — which
-// is OpenGL's row order, so frames upload into a texture with no CPU flip.
-// The send side has no flipped variant, so the pump flips rows once on the
-// way out.
+// Orientation: the _flipped receive format (rows in OpenGL order) exists only
+// on Windows, so frames are marked bottomUp there and top-down elsewhere; the
+// pump normalises. Audio is converted to the shared planar-float AudioFrame,
+// which is NDI's own FLTP layout, so the copy is plane-by-plane verbatim.
 
 #include "io/ndi.h"
 
@@ -46,7 +46,6 @@ struct NdiApi {
 
   NDIlib_recv_instance_t (*recv_create_v3)(const NDIlib_recv_create_v3_t*) = nullptr;
   void (*recv_destroy)(NDIlib_recv_instance_t) = nullptr;
-  void (*recv_connect)(NDIlib_recv_instance_t, const NDIlib_source_t*) = nullptr;
   NDIlib_frame_type_e (*recv_capture_v3)(NDIlib_recv_instance_t,
                                          NDIlib_video_frame_v2_t*,
                                          NDIlib_audio_frame_v3_t*,
@@ -108,7 +107,6 @@ class NdiRuntime {
          (void**)&api_.find_get_current_sources},
         {"NDIlib_recv_create_v3", (void**)&api_.recv_create_v3},
         {"NDIlib_recv_destroy", (void**)&api_.recv_destroy},
-        {"NDIlib_recv_connect", (void**)&api_.recv_connect},
         {"NDIlib_recv_capture_v3", (void**)&api_.recv_capture_v3},
         {"NDIlib_recv_free_video_v2", (void**)&api_.recv_free_video_v2},
         {"NDIlib_recv_free_audio_v3", (void**)&api_.recv_free_audio_v3},
@@ -149,43 +147,7 @@ bool nameContains(const std::string& haystack, const std::string& needle) {
   return lower(haystack).find(lower(needle)) != std::string::npos;
 }
 
-}  // namespace
-
-namespace {
-struct AudioFrameImpl final : AudioFrame {
-  NDIlib_audio_frame_v3_t frame = {};
-  std::vector<uint8_t> data;
-};
-}  // namespace
-
-std::vector<NdiSource> ndiListSources(unsigned waitMs, std::string& error) {
-  const NdiApi* api = NdiRuntime::acquire(error);
-  if (!api) return {};
-
-  NDIlib_find_create_t createSettings = {};
-  createSettings.show_local_sources = true;
-  NDIlib_find_instance_t finder = api->find_create_v2(&createSettings);
-  if (!finder) {
-    error = "NDIlib_find_create_v2 failed";
-    return {};
-  }
-  api->find_wait_for_sources(finder, waitMs);
-  uint32_t count = 0;
-  const NDIlib_source_t* sources = api->find_get_current_sources(finder, &count);
-  std::vector<NdiSource> result;
-  for (uint32_t i = 0; i < count; ++i) {
-    NdiSource source;
-    if (sources[i].p_ndi_name) source.name = sources[i].p_ndi_name;
-    if (sources[i].p_url_address) source.url = sources[i].p_url_address;
-    result.push_back(std::move(source));
-  }
-  api->find_destroy(finder);
-  return result;
-}
-
-namespace {
-
-class NdiReceiverImpl final : public NdiReceiver {
+class NdiReceiverImpl final : public VideoReceiver {
  public:
   ~NdiReceiverImpl() override {
     if (recv_) api_->recv_destroy(recv_);
@@ -196,9 +158,9 @@ class NdiReceiverImpl final : public NdiReceiver {
     api_ = NdiRuntime::acquire(error);
     if (!api_) return false;
 
-    std::vector<NdiSource> sources = ndiListSources(waitMs, error);
-    const NdiSource* match = nullptr;
-    for (const NdiSource& source : sources) {
+    std::vector<SourceInfo> sources = ndiListSources(waitMs, error);
+    const SourceInfo* match = nullptr;
+    for (const SourceInfo& source : sources) {
       if (nameContains(source.name, nameSubstring)) {
         match = &source;
         break;
@@ -260,13 +222,18 @@ class NdiReceiverImpl final : public NdiReceiver {
         return Captured::video;
       }
       case NDIlib_frame_type_audio: {
-        auto held = std::make_unique<AudioFrameImpl>();
-        held->frame = audio;
-        const size_t bytes =
-            (size_t)audio.channel_stride_in_bytes * audio.no_channels;
-        held->data.assign(audio.p_data, audio.p_data + bytes);
-        held->frame.p_data = held->data.data();
-        held->frame.p_metadata = nullptr;
+        auto held = std::make_unique<AudioFrame>();
+        held->sampleRate = audio.sample_rate;
+        held->channels = audio.no_channels;
+        held->samplesPerChannel = audio.no_samples;
+        held->timestamp = audio.timestamp;
+        held->data.resize((size_t)audio.no_channels * audio.no_samples);
+        for (int ch = 0; ch < audio.no_channels; ++ch) {
+          const float* plane = reinterpret_cast<const float*>(
+              audio.p_data + (size_t)ch * audio.channel_stride_in_bytes);
+          std::memcpy(&held->data[(size_t)ch * audio.no_samples], plane,
+                      (size_t)audio.no_samples * sizeof(float));
+        }
         api_->recv_free_audio_v3(recv_, &audio);
         audio_ = std::move(held);
         return Captured::audio;
@@ -285,10 +252,10 @@ class NdiReceiverImpl final : public NdiReceiver {
   const NdiApi* api_ = nullptr;
   NDIlib_recv_instance_t recv_ = nullptr;
   std::string sourceName_;
-  std::unique_ptr<AudioFrameImpl> audio_;
+  std::unique_ptr<AudioFrame> audio_;
 };
 
-class NdiSenderImpl final : public NdiSender {
+class NdiSenderImpl final : public VideoSender {
  public:
   ~NdiSenderImpl() override {
     if (send_) api_->send_destroy(send_);
@@ -311,7 +278,8 @@ class NdiSenderImpl final : public NdiSender {
   }
 
   void sendVideo(const uint8_t* data, int width, int height, int frameRateN,
-                 int frameRateD) override {
+                 int frameRateD, int64_t) override {
+    // NDI stamps its own send-side timestamp; the parameter is for OMT.
     NDIlib_video_frame_v2_t frame = {};
     frame.xres = width;
     frame.yres = height;
@@ -327,10 +295,16 @@ class NdiSenderImpl final : public NdiSender {
   }
 
   void sendAudio(const AudioFrame& audio) override {
-    // The only concrete AudioFrame is the receiver's; this cast is the price
-    // of keeping NDI types out of the public header.
-    NDIlib_audio_frame_v3_t frame =
-        static_cast<const AudioFrameImpl&>(audio).frame;
+    NDIlib_audio_frame_v3_t frame = {};
+    frame.sample_rate = audio.sampleRate;
+    frame.no_channels = audio.channels;
+    frame.no_samples = audio.samplesPerChannel;
+    frame.timecode = NDIlib_send_timecode_synthesize;
+    frame.FourCC = NDIlib_FourCC_audio_type_FLTP;
+    frame.p_data = reinterpret_cast<uint8_t*>(
+        const_cast<float*>(audio.data.data()));
+    frame.channel_stride_in_bytes =
+        audio.samplesPerChannel * (int)sizeof(float);
     api_->send_send_audio_v3(send_, &frame);
   }
 
@@ -342,14 +316,39 @@ class NdiSenderImpl final : public NdiSender {
 
 }  // namespace
 
-std::unique_ptr<NdiReceiver> NdiReceiver::connect(
+std::vector<SourceInfo> ndiListSources(unsigned waitMs, std::string& error) {
+  const NdiApi* api = NdiRuntime::acquire(error);
+  if (!api) return {};
+
+  NDIlib_find_create_t createSettings = {};
+  createSettings.show_local_sources = true;
+  NDIlib_find_instance_t finder = api->find_create_v2(&createSettings);
+  if (!finder) {
+    error = "NDIlib_find_create_v2 failed";
+    return {};
+  }
+  api->find_wait_for_sources(finder, waitMs);
+  uint32_t count = 0;
+  const NDIlib_source_t* sources = api->find_get_current_sources(finder, &count);
+  std::vector<SourceInfo> result;
+  for (uint32_t i = 0; i < count; ++i) {
+    SourceInfo source;
+    if (sources[i].p_ndi_name) source.name = sources[i].p_ndi_name;
+    if (sources[i].p_url_address) source.url = sources[i].p_url_address;
+    result.push_back(std::move(source));
+  }
+  api->find_destroy(finder);
+  return result;
+}
+
+std::unique_ptr<VideoReceiver> ndiConnectReceiver(
     const std::string& nameSubstring, unsigned waitMs, std::string& error) {
   auto receiver = std::make_unique<NdiReceiverImpl>();
   if (!receiver->init(nameSubstring, waitMs, error)) return nullptr;
   return receiver;
 }
 
-std::unique_ptr<NdiSender> NdiSender::create(const std::string& name,
+std::unique_ptr<VideoSender> ndiCreateSender(const std::string& name,
                                              std::string& error) {
   auto sender = std::make_unique<NdiSenderImpl>();
   if (!sender->init(name, error)) return nullptr;
