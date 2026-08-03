@@ -64,6 +64,11 @@ Neither transport library is linked or bundled; both are found at run time:
   path (or point `DYLD_LIBRARY_PATH`/`PATH` at them). Set `OXBOW_OMT_LOG=1`
   for libomt's internal log on stderr.
 
+## Documentation
+
+[docs/USER-GUIDE.md](docs/USER-GUIDE.md) — setup, the vMix loop, config
+reference, control API, latency, troubleshooting.
+
 ## Licence
 
 MIT.

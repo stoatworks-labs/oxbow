@@ -6,6 +6,7 @@
 
 #include "app/pump.h"
 #include "control/control_api.h"
+#include "diag/diag.h"
 
 namespace oxbow {
 
@@ -30,8 +31,16 @@ int runPump(const PumpOptions& options) {
   }
 
   // Both transports exist now, so .NET has done its signal-handler damage
-  // and ours stick.
+  // and ours stick — the crash handler survives for the same reason.
   installStopHandlers();
+  diag::installCrashHandler();
+  {
+    const Pump::Status status = pump.status();
+    diag::info("run: %s:%s -> %s:%s, %zu effect(s)",
+               options.inProtocol.c_str(), status.inSource.c_str(),
+               options.outProtocol.c_str(), options.outName.c_str(),
+               options.effects.size());
+  }
 
   auto lastReport = std::chrono::steady_clock::now();
   while (!stopRequested() && pump.running()) {

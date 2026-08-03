@@ -5,12 +5,15 @@ project(oxbow VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+add_compile_definitions(OXBOW_VERSION="${PROJECT_VERSION}")
+
 add_executable(oxbow
   src/app/config.cpp
   src/app/main.cpp
   src/app/pump.cpp
   src/app/run.cpp
   src/core/dylib.cpp
+  src/diag/diag.cpp
   src/core/json.cpp
   src/control/control_api.cpp
   src/control/http_server.cpp

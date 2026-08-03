@@ -23,6 +23,7 @@
 
 #include "app/config.h"
 #include "app/pump.h"
+#include "diag/diag.h"
 #include "ffgl/ffgl_host.h"
 #include "gl/gl_context.h"
 #include "io/video_io.h"
@@ -226,6 +227,21 @@ int listSourcesCommand(const std::string& protocol) {
 int main(int argc, char** argv) {
   using oxbow::EffectSpec;
   using oxbow::PumpOptions;
+
+  {
+    // Logging up before anything that can fail. The crash handler waits:
+    // libomt's embedded .NET runtime replaces process handlers when it
+    // initialises (same trap as CEF), so runPump installs it after the
+    // transports exist.
+    oxbow::diag::Options diagOptions;
+    diagOptions.appName = "oxbow";
+    diagOptions.envPrefix = "OXBOW";
+#if defined(OXBOW_VERSION)
+    diagOptions.version = OXBOW_VERSION;
+#endif
+    diagOptions.installCrashHandler = false;
+    oxbow::diag::init(diagOptions);
+  }
 
   auto nextArg = [&](int& i) -> const char* {
     return i + 1 < argc ? argv[++i] : nullptr;
