@@ -49,6 +49,7 @@ elseif(WIN32)
     ${GLEW_ROOT}/lib/Release/x64/glew32s.lib
     opengl32
     ws2_32
+    dbghelp
     user32
     gdi32
   )
