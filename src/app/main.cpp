@@ -21,6 +21,7 @@
 
 #include "gl/gl_headers.h"
 
+#include "app/config.h"
 #include "app/pump.h"
 #include "ffgl/ffgl_host.h"
 #include "gl/gl_context.h"
@@ -277,7 +278,15 @@ int main(int argc, char** argv) {
   if (argc >= 2 && std::strcmp(argv[1], "run") == 0) {
     PumpOptions options;
     for (int i = 2; i < argc; ++i) {
-      if (std::strcmp(argv[i], "--in") == 0) {
+      if (std::strcmp(argv[i], "--config") == 0) {
+        const char* v = nextArg(i);
+        std::string error;
+        if (!v || !oxbow::loadConfig(v, options, error)) {
+          std::fprintf(stderr, "run: %s\n",
+                       v ? error.c_str() : "--config needs a path");
+          return 2;
+        }
+      } else if (std::strcmp(argv[i], "--in") == 0) {
         if (const char* v = nextArg(i)) options.inName = v;
       } else if (std::strcmp(argv[i], "--out") == 0) {
         if (const char* v = nextArg(i)) options.outName = v;
@@ -321,6 +330,7 @@ int main(int argc, char** argv) {
                "usage: oxbow probe <plugin>\n"
                "       oxbow selftest <plugin> [--set Name=value ...]\n"
                "       oxbow list [--proto ndi|omt]\n"
+               "       oxbow run --config <file.json>\n"
                "       oxbow run --in <source> --out <name> [--in-proto ndi|omt]\n"
                "                 [--out-proto ndi|omt] [--plugin <path> [--set N=V ...]]...\n"
                "       oxbow send-test [--out <name>] [--proto ndi|omt]\n"

@@ -25,7 +25,12 @@
 
 #pragma once
 #ifdef _MSC_VER
+/* oxbow: guard added around the upstream auto-link pragma — this project
+ * resolves libomt at run time with LoadLibrary and must not link it. This is
+ * the only local change to this header. */
+#ifndef OMT_NO_IMPLICIT_LINK
 #pragma comment(lib, "libomt.lib")
+#endif
 #endif
 
 #define OMT_MAX_STRING_LENGTH 1024

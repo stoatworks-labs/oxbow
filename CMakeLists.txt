@@ -6,9 +6,11 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(oxbow
+  src/app/config.cpp
   src/app/main.cpp
   src/app/pump.cpp
   src/core/dylib.cpp
+  src/core/json.cpp
   src/ffgl/ffgl_host.cpp
   src/io/ndi.cpp
   src/io/omt.cpp
@@ -35,7 +37,8 @@ elseif(WIN32)
   # The FFGL SDK's own vendored GLEW: headers plus a static MSVC x64 lib.
   set(GLEW_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ffgl/deps/glew-2.1.0)
   target_include_directories(oxbow PRIVATE ${GLEW_ROOT}/include)
-  target_compile_definitions(oxbow PRIVATE GLEW_STATIC NOMINMAX)
+  target_compile_definitions(oxbow PRIVATE GLEW_STATIC NOMINMAX
+                                           OMT_NO_IMPLICIT_LINK)
   target_link_libraries(oxbow PRIVATE
     ${GLEW_ROOT}/lib/Release/x64/glew32s.lib
     opengl32
