@@ -36,6 +36,22 @@ oxbow recv-probe --in <source> [--proto ndi|omt] [--dump out.ppm]
 `<plugin>` is a `.bundle` (macOS) or `.dll` (Windows) FFGL 2.x plugin.
 `--plugin` repeats to build a chain; `--set` applies to the plugin before it.
 
+## Control page
+
+`oxbow run --config file.json` with `"control": { "port": 8720 }` (or
+`--port 8720`) serves a live control page at `http://127.0.0.1:8720/` —
+status, the chain, and a slider per parameter, applied on the frame thread
+between frames. The JSON API underneath:
+
+```
+GET  /api/state
+POST /api/param?effect=0&name=Mix&value=0.5
+GET  /api/sources?proto=ndi|omt
+```
+
+Binds loopback by default; set `"bind"` to expose it and understand what that
+means on your network.
+
 ## Runtimes
 
 Neither transport library is linked or bundled; both are found at run time:

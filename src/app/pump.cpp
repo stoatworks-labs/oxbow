@@ -1,30 +1,30 @@
-// The frame pump: NDI in → FFGL chain on the GPU → NDI out.
+// The frame pump: video in → FFGL chain on the GPU → video out.
 //
-// Single-threaded by design for v0.1: capture blocks up to 100 ms, then the
-// frame is uploaded, processed and read back on the same thread that owns the
-// GL context. At 1080p60 the whole pass is a few milliseconds; overlap can
-// come later if a real workload needs it.
+// One thread owns everything GL: the context, the FFGL instances, and the
+// frame loop. Other threads talk to it through a mutex-protected queue of
+// parameter sets and a snapshot of status/effect state. Single-threaded
+// frame handling is deliberate for v0.1: at 1080p60 the whole pass is a few
+// milliseconds; overlap can come later if a real workload needs it.
 //
-// Orientation: frames arrive bottom-up (BGRX_BGRA_flipped), which is OpenGL's
-// row order, so upload is direct. NDI send has no flipped variant, so rows are
-// flipped once on the way out.
+// Orientation: rows are normalised to bottom-up (OpenGL order) at ingest —
+// free on Windows NDI (the _flipped receive format), one CPU pass elsewhere —
+// and flipped back once on the way out.
 
 #include "app/pump.h"
 
 #include <atomic>
 #include <chrono>
-#include <cmath>
+#include <condition_variable>
 #include <csignal>
 #include <cstdio>
 #include <cstring>
-#include <memory>
+#include <mutex>
 #include <thread>
 
 #include <ffgl/FFGL.h>
 
 #include "gl/gl_headers.h"
 
-#include "ffgl/ffgl_host.h"
 #include "gl/gl_context.h"
 #include "io/video_io.h"
 
@@ -95,197 +95,344 @@ struct ChainSurfaces {
 struct LoadedEffect {
   std::unique_ptr<FfglLibrary> library;
   std::unique_ptr<FfglInstance> instance;
-  const EffectSpec* spec = nullptr;
+  EffectSpec spec;
+  std::vector<float> values;// Current float value per param index.
 };
 
-bool rebuildInstances(std::vector<LoadedEffect>& effects, uint32_t width,
-                      uint32_t height) {
-  for (LoadedEffect& effect : effects) {
-    effect.instance.reset();
+}  // namespace
+
+void installStopHandlers() { installSignalHandlers(); }
+bool stopRequested() { return g_stop; }
+
+struct Pump::Impl {
+  PumpOptions options;
+
+  std::thread thread;
+  std::atomic<bool> stop{false};
+  std::atomic<bool> alive{false};
+
+  // Setup handshake: the frame thread reports one-time setup success/failure.
+  std::mutex setupMutex;
+  std::condition_variable setupCv;
+  bool setupDone = false;
+  std::string setupError;
+
+  // Cross-thread state. `mutex` guards pendingSets and the mirrored effect
+  // values; the frame thread drains pendingSets each frame.
+  mutable std::mutex mutex;
+  struct PendingSet {
+    size_t effect;
+    uint32_t param;
+    float value;
+  };
+  std::vector<PendingSet> pendingSets;
+  std::vector<LoadedEffect> effects;// Owned by the frame thread after start.
+
+  std::atomic<uint64_t> frames{0};
+  std::atomic<uint32_t> width{0};
+  std::atomic<uint32_t> height{0};
+  std::atomic<double> frameRate{0};
+  std::atomic<double> fps{0};
+  std::string inSource;// Written once during setup.
+
+  void finishSetup(const std::string& error) {
+    std::lock_guard<std::mutex> lock(setupMutex);
+    setupError = error;
+    setupDone = true;
+    setupCv.notify_all();
+  }
+
+  void threadMain() {
     std::string error;
-    effect.instance = effect.library->createInstance(width, height, error);
-    if (!effect.instance) {
-      std::fprintf(stderr, "pump: %s\n", error.c_str());
-      return false;
+    auto context = GlContext::create(error);
+    if (!context || !context->makeCurrent()) {
+      finishSetup("GL context: " + error);
+      return;
     }
-    for (const auto& [name, value] : effect.spec->sets) {
-      bool found = false;
-      for (const FfglParam& param : effect.library->info().params) {
-        if (param.name == name) {
-          effect.instance->setParamFloat(param.index, value);
-          found = true;
-          break;
-        }
+
+    for (const EffectSpec& spec : options.effects) {
+      LoadedEffect effect;
+      effect.spec = spec;
+      effect.library = FfglLibrary::open(spec.path, error);
+      if (!effect.library) {
+        finishSetup(spec.path + ": " + error);
+        return;
       }
-      if (!found)
-        std::fprintf(stderr, "pump: %s has no parameter named \"%s\"\n",
-                     effect.library->info().name.c_str(), name.c_str());
+      effect.values.resize(effect.library->info().params.size());
+      for (const FfglParam& param : effect.library->info().params)
+        effect.values[param.index] = param.defaultValue;
+      std::printf("pump: loaded %s (%s)\n",
+                  effect.library->info().name.c_str(), spec.path.c_str());
+      effects.push_back(std::move(effect));
     }
+
+    auto receiver = connectReceiver(options.inProtocol, options.inName,
+                                    options.discoverWaitMs, error);
+    if (!receiver) {
+      finishSetup(error);
+      return;
+    }
+    inSource = receiver->sourceName();
+    std::printf("pump: receiving \"%s\"\n", inSource.c_str());
+
+    auto sender = createSender(options.outProtocol, options.outName, error);
+    if (!sender) {
+      finishSetup(error);
+      return;
+    }
+    std::printf("pump: sending as \"%s\"\n", options.outName.c_str());
+
+    alive = true;
+    finishSetup("");
+
+    ChainSurfaces surfaces;
+    std::vector<uint8_t> ingest;// Bottom-up, tightly packed.
+    std::vector<uint8_t> readback;
+    std::vector<uint8_t> sendBuffer;
+    const auto start = std::chrono::steady_clock::now();
+    auto windowStart = start;
+    uint64_t windowFrames = 0;
+
+    while (!stop) {
+      const VideoReceiver::Captured captured = receiver->capture(
+          100, [&](const VideoFrame& frame) {
+            const uint32_t w = (uint32_t)frame.width;
+            const uint32_t h = (uint32_t)frame.height;
+            if (w == 0 || h == 0) return;
+
+            if (surfaces.width != w || surfaces.height != h) {
+              std::printf("pump: video is %ux%u @ %g\n", w, h,
+                          (double)frame.frameRateN / frame.frameRateD);
+              if (!surfaces.build(w, h)) {
+                std::fprintf(stderr, "pump: FBO incomplete at %ux%u\n", w, h);
+                stop = true;
+                return;
+              }
+              if (!rebuildInstances(w, h)) {
+                stop = true;
+                return;
+              }
+              ingest.resize((size_t)w * h * 4);
+              readback.resize((size_t)w * h * 4);
+              sendBuffer.resize((size_t)w * h * 4);
+              width = w;
+              height = h;
+              frameRate = (double)frame.frameRateN / frame.frameRateD;
+            }
+
+            applyPendingSets();
+
+            // Normalise to bottom-up rows (OpenGL order). Windows NDI
+            // delivers them that way already; elsewhere flip once here.
+            const uint8_t* rows;
+            int rowStride;
+            if (frame.bottomUp) {
+              rows = frame.data;
+              rowStride = frame.strideBytes;
+            } else {
+              for (uint32_t y = 0; y < h; ++y)
+                std::memcpy(
+                    &ingest[(size_t)y * w * 4],
+                    frame.data + (size_t)(h - 1 - y) * frame.strideBytes,
+                    (size_t)w * 4);
+              rows = ingest.data();
+              rowStride = (int)w * 4;
+            }
+
+            // Upload. Stride can exceed w*4; ROW_LENGTH covers it.
+            glBindTexture(GL_TEXTURE_2D, surfaces.inputTexture);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, rowStride / 4);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_BGRA,
+                            GL_UNSIGNED_INT_8_8_8_8_REV, rows);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+
+            const double seconds = std::chrono::duration<double>(
+                                       std::chrono::steady_clock::now() - start)
+                                       .count();
+
+            // Chain. `previous` feeds the next effect; each renders into the
+            // other ping-pong target. Every binding is re-established per
+            // effect — plugins reset bindings to 0.
+            GLuint previous = surfaces.inputTexture;
+            int target = 0;
+            for (LoadedEffect& effect : effects) {
+              glBindFramebuffer(GL_FRAMEBUFFER, surfaces.fbo[target]);
+              glViewport(0, 0, w, h);
+              glClearColor(0, 0, 0, 0);
+              glClear(GL_COLOR_BUFFER_BIT);
+              effect.instance->setTime(seconds);
+              const bool isSource = effect.library->info().type == FF_SOURCE;
+              if (!effect.instance->process(isSource ? 0 : previous, w, h,
+                                            surfaces.fbo[target])) {
+                std::fprintf(stderr, "pump: %s failed to process\n",
+                             effect.library->info().name.c_str());
+              }
+              previous = surfaces.texture[target];
+              target = 1 - target;
+            }
+
+            // Read back; both paths end bottom-up in `readback`.
+            if (effects.empty()) {
+              for (uint32_t y = 0; y < h; ++y)
+                std::memcpy(&readback[(size_t)y * w * 4],
+                            rows + (size_t)y * rowStride, (size_t)w * 4);
+            } else {
+              glBindFramebuffer(GL_READ_FRAMEBUFFER, surfaces.fbo[1 - target]);
+              glReadPixels(0, 0, w, h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
+                           readback.data());
+            }
+
+            // Flip to top-down for the sender.
+            for (uint32_t y = 0; y < h; ++y)
+              std::memcpy(&sendBuffer[(size_t)y * w * 4],
+                          &readback[(size_t)(h - 1 - y) * w * 4],
+                          (size_t)w * 4);
+            sender->sendVideo(sendBuffer.data(), w, h, frame.frameRateN,
+                              frame.frameRateD, frame.timestamp);
+            ++frames;
+            ++windowFrames;
+          });
+
+      if (captured == VideoReceiver::Captured::audio) {
+        if (auto audio = receiver->takeAudio()) sender->sendAudio(*audio);
+      }
+
+      const auto now = std::chrono::steady_clock::now();
+      const double window =
+          std::chrono::duration<double>(now - windowStart).count();
+      if (window >= 2.0) {
+        fps = windowFrames / window;
+        windowFrames = 0;
+        windowStart = now;
+      }
+    }
+
+    surfaces.destroy();
+    effects.clear();// Instances die with the GL context still current.
+    alive = false;
+  }
+
+  bool rebuildInstances(uint32_t w, uint32_t h) {
+    for (LoadedEffect& effect : effects) {
+      effect.instance.reset();
+      std::string error;
+      effect.instance = effect.library->createInstance(w, h, error);
+      if (!effect.instance) {
+        std::fprintf(stderr, "pump: %s\n", error.c_str());
+        return false;
+      }
+      // Config-file sets, then anything adjusted live since.
+      for (const auto& [name, value] : effect.spec.sets)
+        setByName(effect, name, value);
+      for (const FfglParam& param : effect.library->info().params) {
+        if (effect.values[param.index] != param.defaultValue)
+          effect.instance->setParamFloat(param.index,
+                                         effect.values[param.index]);
+      }
+    }
+    return true;
+  }
+
+  void setByName(LoadedEffect& effect, const std::string& name, float value) {
+    for (const FfglParam& param : effect.library->info().params) {
+      if (param.name == name) {
+        effect.instance->setParamFloat(param.index, value);
+        effect.values[param.index] = value;
+        return;
+      }
+    }
+    std::fprintf(stderr, "pump: %s has no parameter named \"%s\"\n",
+                 effect.library->info().name.c_str(), name.c_str());
+  }
+
+  void applyPendingSets() {
+    std::vector<PendingSet> sets;
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      sets.swap(pendingSets);
+    }
+    for (const PendingSet& set : sets) {
+      if (set.effect >= effects.size()) continue;
+      LoadedEffect& effect = effects[set.effect];
+      if (!effect.instance || set.param >= effect.values.size()) continue;
+      effect.instance->setParamFloat(set.param, set.value);
+      std::lock_guard<std::mutex> lock(mutex);
+      effect.values[set.param] = set.value;
+    }
+  }
+};
+
+Pump::Pump(PumpOptions options) : impl_(std::make_unique<Impl>()) {
+  impl_->options = std::move(options);
+}
+
+Pump::~Pump() { stop(); }
+
+bool Pump::start(std::string& error) {
+  impl_->thread = std::thread([this] { impl_->threadMain(); });
+  std::unique_lock<std::mutex> lock(impl_->setupMutex);
+  impl_->setupCv.wait(lock, [this] { return impl_->setupDone; });
+  if (!impl_->setupError.empty()) {
+    error = impl_->setupError;
+    lock.unlock();
+    impl_->thread.join();
+    return false;
   }
   return true;
 }
 
-}  // namespace
+void Pump::stop() {
+  impl_->stop = true;
+  if (impl_->thread.joinable()) impl_->thread.join();
+}
 
-int runPump(const PumpOptions& options) {
-  std::string error;
-  auto context = GlContext::create(error);
-  if (!context || !context->makeCurrent()) {
-    std::fprintf(stderr, "pump: GL context: %s\n", error.c_str());
-    return 1;
-  }
+bool Pump::running() const { return impl_->alive; }
 
-  std::vector<LoadedEffect> effects;
-  for (const EffectSpec& spec : options.effects) {
-    LoadedEffect effect;
-    effect.spec = &spec;
-    effect.library = FfglLibrary::open(spec.path, error);
-    if (!effect.library) {
-      std::fprintf(stderr, "pump: %s: %s\n", spec.path.c_str(), error.c_str());
-      return 1;
+Pump::Status Pump::status() const {
+  Status status;
+  status.inSource = impl_->inSource;
+  status.frames = impl_->frames;
+  status.fps = impl_->fps;
+  status.width = impl_->width;
+  status.height = impl_->height;
+  status.frameRate = impl_->frameRate;
+  return status;
+}
+
+std::vector<Pump::EffectState> Pump::effects() const {
+  std::vector<EffectState> result;
+  std::lock_guard<std::mutex> lock(impl_->mutex);
+  for (const LoadedEffect& effect : impl_->effects) {
+    EffectState state;
+    state.name = effect.library->info().name;
+    state.path = effect.spec.path;
+    for (const FfglParam& param : effect.library->info().params) {
+      ParamState paramState;
+      paramState.index = param.index;
+      paramState.name = param.name;
+      paramState.type = param.type;
+      paramState.value = effect.values[param.index];
+      paramState.rangeMin = param.rangeMin;
+      paramState.rangeMax = param.rangeMax;
+      state.params.push_back(std::move(paramState));
     }
-    std::printf("pump: loaded %s (%s)\n", effect.library->info().name.c_str(),
-                spec.path.c_str());
-    effects.push_back(std::move(effect));
+    result.push_back(std::move(state));
   }
+  return result;
+}
 
-  auto receiver = connectReceiver(options.inProtocol, options.inName,
-                                  options.discoverWaitMs, error);
-  if (!receiver) {
-    std::fprintf(stderr, "pump: %s\n", error.c_str());
-    return 1;
-  }
-  std::printf("pump: receiving \"%s\"\n", receiver->sourceName().c_str());
-
-  auto sender = createSender(options.outProtocol, options.outName, error);
-  if (!sender) {
-    std::fprintf(stderr, "pump: %s\n", error.c_str());
-    return 1;
-  }
-  std::printf("pump: sending as \"%s\"\n", options.outName.c_str());
-  installSignalHandlers();
-
-  ChainSurfaces surfaces;
-  std::vector<uint8_t> ingest;// Bottom-up, tightly packed.
-  std::vector<uint8_t> readback;
-  std::vector<uint8_t> sendBuffer;
-  const auto start = std::chrono::steady_clock::now();
-  uint64_t frames = 0;
-  auto lastReport = start;
-
-  while (!g_stop) {
-    const VideoReceiver::Captured captured = receiver->capture(
-        100, [&](const VideoFrame& frame) {
-          const uint32_t w = (uint32_t)frame.width;
-          const uint32_t h = (uint32_t)frame.height;
-          if (w == 0 || h == 0) return;
-
-          if (surfaces.width != w || surfaces.height != h) {
-            std::printf("pump: video is %ux%u @ %g\n", w, h,
-                        (double)frame.frameRateN / frame.frameRateD);
-            if (!surfaces.build(w, h)) {
-              std::fprintf(stderr, "pump: FBO incomplete at %ux%u\n", w, h);
-              g_stop = true;
-              return;
-            }
-            if (!rebuildInstances(effects, w, h)) {
-              g_stop = true;
-              return;
-            }
-            ingest.resize((size_t)w * h * 4);
-            readback.resize((size_t)w * h * 4);
-            sendBuffer.resize((size_t)w * h * 4);
-          }
-
-          // Normalise to bottom-up rows (OpenGL order). On Windows NDI
-          // delivers them that way already; elsewhere flip once here.
-          const uint8_t* rows;
-          int rowStride;
-          if (frame.bottomUp) {
-            rows = frame.data;
-            rowStride = frame.strideBytes;
-          } else {
-            for (uint32_t y = 0; y < h; ++y)
-              std::memcpy(&ingest[(size_t)y * w * 4],
-                          frame.data + (size_t)(h - 1 - y) * frame.strideBytes,
-                          (size_t)w * 4);
-            rows = ingest.data();
-            rowStride = (int)w * 4;
-          }
-
-          // Upload. Stride can exceed w*4; ROW_LENGTH covers it.
-          glBindTexture(GL_TEXTURE_2D, surfaces.inputTexture);
-          glPixelStorei(GL_UNPACK_ROW_LENGTH, rowStride / 4);
-          glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_BGRA,
-                          GL_UNSIGNED_INT_8_8_8_8_REV, rows);
-          glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-
-          const double seconds =
-              std::chrono::duration<double>(std::chrono::steady_clock::now() -
-                                            start)
-                  .count();
-
-          // Chain. `previous` is the texture feeding the next effect; each
-          // effect renders into the other ping-pong target. Every binding is
-          // re-established per effect — plugins reset bindings to 0.
-          GLuint previous = surfaces.inputTexture;
-          int target = 0;
-          for (LoadedEffect& effect : effects) {
-            glBindFramebuffer(GL_FRAMEBUFFER, surfaces.fbo[target]);
-            glViewport(0, 0, w, h);
-            glClearColor(0, 0, 0, 0);
-            glClear(GL_COLOR_BUFFER_BIT);
-            effect.instance->setTime(seconds);
-            const bool isSource =
-                effect.library->info().type == FF_SOURCE;
-            if (!effect.instance->process(isSource ? 0 : previous, w, h,
-                                          surfaces.fbo[target])) {
-              std::fprintf(stderr, "pump: %s failed to process\n",
-                           effect.library->info().name.c_str());
-            }
-            previous = surfaces.texture[target];
-            target = 1 - target;
-          }
-
-          // Read back. Both paths end bottom-up in `readback`; with no
-          // effects the normalised ingest rows pass through untouched.
-          if (effects.empty()) {
-            for (uint32_t y = 0; y < h; ++y)
-              std::memcpy(&readback[(size_t)y * w * 4],
-                          rows + (size_t)y * rowStride, (size_t)w * 4);
-          } else {
-            glBindFramebuffer(GL_READ_FRAMEBUFFER,
-                              surfaces.fbo[1 - target]);
-            glReadPixels(0, 0, w, h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
-                         readback.data());
-          }
-
-          // Flip to top-down for the sender.
-          for (uint32_t y = 0; y < h; ++y)
-            std::memcpy(&sendBuffer[(size_t)y * w * 4],
-                        &readback[(size_t)(h - 1 - y) * w * 4], (size_t)w * 4);
-          sender->sendVideo(sendBuffer.data(), w, h, frame.frameRateN,
-                            frame.frameRateD, frame.timestamp);
-          ++frames;
-        });
-
-    if (captured == VideoReceiver::Captured::audio) {
-      if (auto audio = receiver->takeAudio()) sender->sendAudio(*audio);
-    }
-
-    const auto now = std::chrono::steady_clock::now();
-    if (now - lastReport >= std::chrono::seconds(5)) {
-      const double elapsed = std::chrono::duration<double>(now - start).count();
-      std::printf("pump: %llu frames, %.1f fps average\n",
-                  (unsigned long long)frames, frames / elapsed);
-      std::fflush(stdout);
-      lastReport = now;
+bool Pump::setParam(size_t effectIndex, const std::string& paramName,
+                    float value) {
+  std::lock_guard<std::mutex> lock(impl_->mutex);
+  if (effectIndex >= impl_->effects.size()) return false;
+  const LoadedEffect& effect = impl_->effects[effectIndex];
+  for (const FfglParam& param : effect.library->info().params) {
+    if (param.name == paramName) {
+      impl_->pendingSets.push_back({effectIndex, param.index, value});
+      return true;
     }
   }
-
-  surfaces.destroy();
-  std::printf("pump: stopped after %llu frames\n", (unsigned long long)frames);
-  return 0;
+  return false;
 }
 
 int runTestSender(const std::string& protocol, const std::string& outName) {

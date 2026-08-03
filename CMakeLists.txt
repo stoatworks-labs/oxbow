@@ -9,8 +9,11 @@ add_executable(oxbow
   src/app/config.cpp
   src/app/main.cpp
   src/app/pump.cpp
+  src/app/run.cpp
   src/core/dylib.cpp
   src/core/json.cpp
+  src/control/control_api.cpp
+  src/control/http_server.cpp
   src/ffgl/ffgl_host.cpp
   src/io/ndi.cpp
   src/io/omt.cpp
@@ -42,6 +45,7 @@ elseif(WIN32)
   target_link_libraries(oxbow PRIVATE
     ${GLEW_ROOT}/lib/Release/x64/glew32s.lib
     opengl32
+    ws2_32
     user32
     gdi32
   )

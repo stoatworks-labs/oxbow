@@ -11,6 +11,7 @@ namespace oxbow {
 ///   {
 ///     "input":  { "protocol": "ndi", "source": "vMix - Output 3" },
 ///     "output": { "protocol": "omt", "name": "oxbow" },
+///     "control": { "port": 8720 },
 ///     "chain": [
 ///       { "plugin": "/path/Effect.bundle", "params": { "Mix": 0.8 } }
 ///     ]

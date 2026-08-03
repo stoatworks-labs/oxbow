@@ -35,6 +35,10 @@ bool loadConfig(const std::string& path, PumpOptions& options,
     return false;
   }
 
+  const json::Value& control = (*root)["control"];
+  options.controlPort = control["port"].asInt(0);
+  options.controlBind = control["bind"].asString("127.0.0.1");
+
   const json::Value& chain = (*root)["chain"];
   for (size_t i = 0; i < chain.size(); ++i) {
     const json::Value& entry = chain.at(i);
