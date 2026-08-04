@@ -76,6 +76,10 @@ Neither transport library is linked or bundled; both are found at run time:
 [docs/USER-GUIDE.md](docs/USER-GUIDE.md) — setup, the vMix loop, config
 reference, control API, latency, troubleshooting.
 
+<!-- attributions:start -->
+This project is built on other people's work — see [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+<!-- attributions:end -->
+
 ## Licence
 
 MIT.
