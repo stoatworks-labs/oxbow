@@ -1,5 +1,12 @@
 # oxbow
 
+> **AI-assisted project.** This codebase was created with [Claude](https://claude.com/claude-code)
+> (Anthropic), directed and reviewed by a human author. The FFGL host core is
+> verified against nine real third-party plugins, and the frame pump has been
+> measured at 60 fps end to end over NDI→NDI, OMT→OMT and NDI→OMT. Chain
+> configuration and the web UI are still in progress — see the status below
+> before relying on any of it.
+
 FFGL effects for hosts that have no video plugin interface.
 
 vMix, OBS, and most broadcast software cannot load video effect plugins. oxbow
