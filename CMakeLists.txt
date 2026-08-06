@@ -52,6 +52,15 @@ if(APPLE)
   set_source_files_properties(${OXBOW_SYPHON_C} PROPERTIES COMPILE_OPTIONS "-w")
 elseif(WIN32)
   target_sources(oxbow PRIVATE src/gl/gl_context_win.cpp)
+
+  # Spout output, plus the vendored Spout DirectX sender subset (BSD-2; see
+  # third_party/spout/README.md). /w because this is upstream code we do not
+  # modify and it builds clean at its own warning level, not ours.
+  target_sources(oxbow PRIVATE src/io/spout.cpp)
+  set(OXBOW_SPOUT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spout/Spout)
+  file(GLOB OXBOW_SPOUT_SOURCES ${OXBOW_SPOUT_DIR}/*.cpp)
+  target_sources(oxbow PRIVATE ${OXBOW_SPOUT_SOURCES})
+  set_source_files_properties(${OXBOW_SPOUT_SOURCES} PROPERTIES COMPILE_OPTIONS "/w")
 endif()
 
 target_include_directories(oxbow PRIVATE
@@ -80,12 +89,16 @@ if(APPLE)
 elseif(WIN32)
   # The FFGL SDK's own vendored GLEW: headers plus a static MSVC x64 lib.
   set(GLEW_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ffgl/deps/glew-2.1.0)
-  target_include_directories(oxbow PRIVATE ${GLEW_ROOT}/include)
+  target_include_directories(oxbow PRIVATE ${GLEW_ROOT}/include
+                                          ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spout/Spout)
   target_compile_definitions(oxbow PRIVATE GLEW_STATIC NOMINMAX
                                            OMT_NO_IMPLICIT_LINK)
   target_link_libraries(oxbow PRIVATE
     ${GLEW_ROOT}/lib/Release/x64/glew32s.lib
     opengl32
+    # Spout's DirectX sender.
+    d3d11
+    dxgi
     ws2_32
     dbghelp
     user32

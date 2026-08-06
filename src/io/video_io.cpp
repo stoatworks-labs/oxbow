@@ -5,6 +5,8 @@
 
 #if defined(__APPLE__)
 #include "io/syphon.h"
+#elif defined(_WIN32)
+#include "io/spout.h"
 #endif
 
 namespace oxbow {
@@ -19,6 +21,8 @@ constexpr const char* kReceiveProtocols = "ndi or omt";
 std::string sendProtocols() {
 #if defined(__APPLE__)
   return "ndi, omt or syphon";
+#elif defined(_WIN32)
+  return "ndi, omt or spout";
 #else
   return "ndi or omt";
 #endif
@@ -49,14 +53,23 @@ std::unique_ptr<VideoSender> createSender(const std::string& protocol,
                                           std::string& error) {
   if (protocol == "ndi") return ndiCreateSender(name, error);
   if (protocol == "omt") return omtCreateSender(name, error);
+  // The shared-surface pair. Each is named for the protocol rather than for
+  // "shared", because that is what the operator's other application calls it —
+  // and answering "macOS only" beats "unknown protocol" for someone who copied
+  // a command line from the other platform's documentation.
 #if defined(__APPLE__)
   if (protocol == "syphon") return syphonCreateSender(name, error);
-#else
+#elif defined(_WIN32)
+  if (protocol == "spout") return spoutCreateSender(name, error);
+#endif
   if (protocol == "syphon") {
     error = "syphon output is macOS only";
     return nullptr;
   }
-#endif
+  if (protocol == "spout") {
+    error = "spout output is Windows only";
+    return nullptr;
+  }
   error = "unknown protocol \"" + protocol + "\" (" + sendProtocols() + ")";
   return nullptr;
 }

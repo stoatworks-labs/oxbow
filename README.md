@@ -34,9 +34,9 @@ oxbow probe <plugin>                          # load a plugin, print metadata
 oxbow selftest <plugin> [--set Name=value …]  # instantiate offscreen, render frames, report
 oxbow list [--proto ndi|omt]                  # discover sources
 oxbow run --in <source> --out <name>          # the loop
-          [--in-proto ndi|omt] [--out-proto ndi|omt|syphon]
+          [--in-proto ndi|omt] [--out-proto ndi|omt|syphon|spout]
           [--plugin <path> [--set Name=value …]]…
-oxbow send-test [--out <name>] [--proto ndi|omt|syphon]  # built-in test pattern
+oxbow send-test [--out <name>] [--proto ndi|omt|syphon|spout]  # test pattern
 oxbow recv-probe --in <source> [--proto ndi|omt] [--dump out.ppm]
 ```
 

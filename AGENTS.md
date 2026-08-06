@@ -108,3 +108,24 @@ this code: WebLinked's `tools/syphon_probe.mm`, which links **Resolume Arena's
 bundled Syphon 5**, receives a 1280x720 frame; and **OBS's own `syphon-input`
 source** lists `[oxbow] OxbowSyphon` and renders the colour bars in the right
 order, which is also the check that BGRA is not channel-swapped.
+
+
+## Spout output (Windows)
+
+`--out-proto spout`, the counterpart of Syphon: a DirectX 11 texture with a
+DXGI shared handle, named through shared memory. Vendored sender subset in
+`third_party/spout` (BSD-2), backend in `src/io/spout.cpp`, both lifted from
+WebLinked.
+
+**Never run.** It compiles on the Windows CI job and that is all; compiling is
+not evidence a receiver sees a picture. Do not describe it as working, and do
+not delete the note at the head of the file until somebody has looked at one.
+
+Two protocol facts worth not rediscovering: Spout tells a *sender* nothing
+about receivers (`spoutDX::IsConnected` is the receiver's question), so there
+is no skip-when-idle optimisation as there is on Syphon; and the sender must be
+named before the first `SendImage`, or it is created under spoutDX's own
+default name and the operator cannot find the name they typed.
+
+Unlike Syphon, there is no main-thread requirement — that constraint comes from
+NSDistributedNotificationCenter, not from sharing a surface.
