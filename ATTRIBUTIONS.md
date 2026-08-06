@@ -40,6 +40,26 @@ Arrives inside the FFGL submodule, under the SDK's CustomThumbnail sample.
 
 Part of the upstream SDK tree rather than something these plugins call directly — listed because it is present in the checkout.
 
+### Spout
+
+<https://github.com/leadedge/Spout2>  
+Licence: BSD-2-Clause  
+Copyright: Lynn Jarvis
+
+Vendored under third_party/spout/.
+
+Shares a GPU texture with other Windows applications without a round trip through system memory.
+
+### Syphon Framework
+
+<https://github.com/Syphon/Syphon-Framework>  
+Licence: BSD-3-Clause  
+Copyright: Tom Butterworth (bangnoise) and Anton Marini (vade)
+
+Vendored under third_party/syphon/.
+
+The macOS counterpart to Spout — same job, same reason.
+
 ### NDI SDK
 
 <https://ndi.video/for-developers/ndi-sdk/>  
