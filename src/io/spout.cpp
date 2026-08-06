@@ -18,9 +18,10 @@
 // Ported from WebLinked's `src/outputs/shared_surface_win.cpp`.
 //
 // **This file has never been run.** It is written against the Windows SDK and
-// the vendored Spout sources and nothing more. oxbow's Windows CI compiles it;
-// compiling is not evidence that a receiver sees a picture, and this comment
-// should not be deleted until somebody has looked at one.
+// the vendored Spout sources and nothing more. It does compile: this file and
+// all seven vendored Spout sources built in the Windows job of run 31129182404
+// (2026-08-06). Compiling is not evidence that a receiver sees a picture, and
+// this comment should not be deleted until somebody has looked at one.
 //
 // Two deliberate differences from Syphon, both properties of the protocol:
 //

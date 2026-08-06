@@ -117,9 +117,11 @@ DXGI shared handle, named through shared memory. Vendored sender subset in
 `third_party/spout` (BSD-2), backend in `src/io/spout.cpp`, both lifted from
 WebLinked.
 
-**Never run.** It compiles on the Windows CI job and that is all; compiling is
-not evidence a receiver sees a picture. Do not describe it as working, and do
-not delete the note at the head of the file until somebody has looked at one.
+**Never run.** It compiles — `spout.cpp` and all seven vendored Spout sources
+built in the Windows job of run 31129182404 (commit 6072eb9, 2026-08-06) — and
+that is the whole of the evidence. Compiling is not evidence a receiver sees a
+picture. Do not describe it as working, and do not delete the note at the head
+of the file until somebody has looked at one.
 
 Two protocol facts worth not rediscovering: Spout tells a *sender* nothing
 about receivers (`spoutDX::IsConnected` is the receiver's question), so there
