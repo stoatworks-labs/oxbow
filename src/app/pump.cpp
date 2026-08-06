@@ -476,9 +476,22 @@ int runTestSender(const std::string& protocol, const std::string& outName) {
     // Paced by servicing the main run loop rather than sleeping on it: this
     // loop *is* the main thread, and a Syphon output dispatches its server
     // creation here. See app/main_loop.h.
-    const auto next = start + frame * std::chrono::nanoseconds(16666667);
+    //
+    // **`frame` is cast to a signed type before it multiplies a duration, and
+    // the deadline is compared before it is subtracted.** `frame` is uint64_t,
+    // and `uint64_t * nanoseconds` promotes the duration's representation to
+    // unsigned — so once the deadline is in the past, `next - now` wraps to
+    // ~1.8e19 ns, or 585 years. The old `sleep_until(next)` never showed this
+    // because it compares rather than subtracts; computing the remaining time
+    // by hand does. Measured: opening a DeckLink takes longer than one frame
+    // period, so the very first wait was 18446744073 s and exactly one frame
+    // was ever sent — the card sat emitting a valid black raster, which looks
+    // precisely like an output that renders nothing.
+    const auto next =
+        start + std::chrono::nanoseconds(16666667) * static_cast<int64_t>(frame);
+    const auto now = std::chrono::steady_clock::now();
     const double remaining =
-        std::chrono::duration<double>(next - std::chrono::steady_clock::now()).count();
+        next > now ? std::chrono::duration<double>(next - now).count() : 0.0;
     waitServicingMainLoop(remaining);
   }
   std::printf("send-test: stopped after %llu frames\n",

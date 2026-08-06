@@ -17,9 +17,11 @@
 //     because that is how oxbow's senders learn their size.
 //   - **No keying and no audio.** See decklink.h.
 //
-// **Never run against hardware by its author.** The SDK sequence follows
-// WebLinked's, which was proven on a Duo 2, but no DeckLink has been connected
-// to *this* code. Do not describe it as working until one has been.
+// **Verified on a real DeckLink Duo 2 (2026-08-06)**: connector 1 out, connector
+// 4 in, cabled together. `tools/sdi_probe` captured all eight bars in the right
+// places within 1-3 counts of BGRA -> SDI 4:2:2 -> BGRA, and a full chain (NDI
+// in, Asciify on the GPU, SDI out) ran at 60.0 fps with the plugin's output
+// arriving correctly off the wire.
 //
 // The SDK is not vendored — it is Blackmagic's, and its licence is not ours to
 // redistribute. Configure with `-DDECKLINK_SDK_DIR=/path/to/SDK` and the CMake
@@ -31,6 +33,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -149,9 +152,14 @@ class DeckLinkSender final : public VideoSender {
     if (!ensureOpen(width, height, frameRateN, frameRateD)) return;
 
     IDeckLinkMutableVideoFrame* frame = nullptr;
-    if (output_->CreateVideoFrame(width, height, width * 4, bmdFormat8BitBGRA,
-                                  bmdFrameFlagDefault, &frame) != S_OK ||
-        frame == nullptr) {
+    const HRESULT created = output_->CreateVideoFrame(
+        width, height, width * 4, bmdFormat8BitBGRA, bmdFrameFlagDefault, &frame);
+    if (created != S_OK || frame == nullptr) {
+      if (!reportedCreate_) {
+        reportedCreate_ = true;
+        std::fprintf(stderr, "decklink: CreateVideoFrame failed (0x%08x)\n",
+                     (unsigned)created);
+      }
       return;
     }
 
@@ -184,8 +192,17 @@ class DeckLinkSender final : public VideoSender {
   /// from wall-clock arithmetic, so a late tick shortens the queue instead of
   /// scheduling a frame in the past — which the card rejects outright.
   void scheduleFrame(IDeckLinkMutableVideoFrame* frame) {
-    if (output_->ScheduleVideoFrame(frame, scheduled_ * frameDuration_, frameDuration_,
-                                    timeScale_) != S_OK) {
+    const HRESULT scheduledOk = output_->ScheduleVideoFrame(
+        frame, scheduled_ * frameDuration_, frameDuration_, timeScale_);
+    if (scheduledOk != S_OK) {
+      if (!reportedSchedule_) {
+        reportedSchedule_ = true;
+        std::fprintf(stderr,
+                     "decklink: ScheduleVideoFrame failed (0x%08x) at t=%lld dur=%lld "
+                     "scale=%lld\n",
+                     (unsigned)scheduledOk, (long long)(scheduled_ * frameDuration_),
+                     (long long)frameDuration_, (long long)timeScale_);
+      }
       frame->Release();
       return;
     }
@@ -194,9 +211,20 @@ class DeckLinkSender final : public VideoSender {
     // Playback starts once there is a queue to play, not on the first frame:
     // starting with one frame in hand underflows immediately.
     if (!playing_ && scheduled_ >= kPreRollFrames) {
-      if (output_->StartScheduledPlayback(0, timeScale_, 1.0) == S_OK) {
-        playing_ = true;
-      }
+      const HRESULT started = output_->StartScheduledPlayback(0, timeScale_, 1.0);
+      playing_ = started == S_OK;
+      std::fprintf(stderr, "decklink: StartScheduledPlayback %s (0x%08x)\n",
+                   playing_ ? "ok" : "FAILED", (unsigned)started);
+    }
+
+    // Every failure mode past this point looks identical from outside — the
+    // card emits a valid black raster whether it is playing our frames, playing
+    // nothing, or dropping every one — so this is worth having, but it is two
+    // lines a second on a long run. Opt in.
+    if (statsWanted_ && scheduled_ % 120 == 0) {
+      std::fprintf(stderr, "decklink: scheduled=%lld playing=%d late=%lld dropped=%lld\n",
+                   (long long)scheduled_, playing_ ? 1 : 0, (long long)callback_.late(),
+                   (long long)callback_.dropped());
     }
   }
 
@@ -378,6 +406,9 @@ class DeckLinkSender final : public VideoSender {
   bool playing_ = false;
   bool failed_ = false;
   bool warnedRaster_ = false;
+  bool reportedCreate_ = false;
+  bool reportedSchedule_ = false;
+  const bool statsWanted_ = std::getenv("OXBOW_DECKLINK_STATS") != nullptr;
 };
 
 }  // namespace

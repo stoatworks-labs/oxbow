@@ -142,11 +142,23 @@ card** — oxbow's pump already holds BGRA and DeckLink accepts
 `bmdFormat8BitBGRA`, so unlike WebLinked there is no colour conversion in this
 path at all and no opportunity to get BT.709 wrong.
 
-**Never run against hardware.** It compiles against a real 12.2 SDK and its
-device enumeration reports correctly with no card attached; that is the whole
-of the evidence. Do not describe it as working.
+**Verified on a real DeckLink Duo 2, 2026-08-06.** Connector 1 out, connector 4
+in, cabled together: `tools/sdi_probe --device 3` captured all eight bars in the
+right places, within 1-3 counts of the BGRA -> SDI 4:2:2 -> BGRA round trip. A
+full chain — NDI in, Asciify on the GPU, DeckLink out — ran at 60.0 fps with the
+plugin's output arriving correctly off the wire.
 
-Things that will bite whoever tests it first:
+**The bug the hardware found was in the pacing, not the card code.**
+`runTestSender`'s `frame` is `uint64_t`, and `uint64_t * nanoseconds` promotes
+the duration's representation to **unsigned** — so once the deadline was in the
+past, `next - now` wrapped to ~1.8e19 ns, or 585 years. Opening a DeckLink takes
+longer than one frame period, so the very first wait did exactly that: one frame
+was ever sent, and the card sat emitting a valid black raster, which is
+indistinguishable from an output that renders nothing. `sleep_until(next)` never
+showed it because it compares rather than subtracts. Cast to a signed type
+before multiplying a duration, and compare the deadline before subtracting it.
+
+Things to know when testing:
 
 - **Frame lifetime.** The card takes its own reference at `ScheduleVideoFrame`;
   ours is released in the completion callback. Releasing at schedule time frees
@@ -167,3 +179,25 @@ Things that will bite whoever tests it first:
   says so.
 
 No audio, and no keying. See the note at the head of `src/io/decklink.h`.
+
+
+## Card profiles, and why a connector can be dead
+
+A Duo 2 lists **all four sub-devices whatever profile it is in**, and each pair
+has its **own profile manager** — the pairs here are {Duo 1, Duo 3} and
+{Duo 2, Duo 4}. A pair in `1dfd` (one sub-device, full duplex) leaves its second
+sub-device reporting `duplex=INACTIVE`, refusing both EnableVideoInput and
+EnableVideoOutput, while still offering a full list of display modes. That reads
+as broken hardware or a wrong mode. It is neither.
+
+Measured here: {Duo 2, Duo 4} was in `1dfd`, so connector 4 was unusable in both
+directions and the cable between connectors 1 and 4 could not carry a test at
+all. `tools/dl_profile --set 2dhd` put both pairs into two-half-duplex
+sub-devices, after which all four connectors worked.
+
+    ./build/dl_profile              # list profiles per pair, mark the active one
+    ./build/dl_profile --set 2dhd   # all connectors independent
+    ./build/sdi_probe --list        # per sub-device: input, output, duplex
+
+`dl_profile` **writes to the card and the change persists** for every
+application, which is why it is a separate tool rather than a flag on the probe.

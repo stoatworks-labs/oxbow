@@ -43,6 +43,7 @@ oxbow selftest <plugin> [--set Name=value …]  # instantiate offscreen, render 
 oxbow list [--proto ndi|omt]                  # discover sources
 oxbow run --in <source> --out <name>          # the loop
           [--in-proto ndi|omt] [--out-proto ndi|omt|syphon|spout|decklink]
+          # decklink --out takes an index or a name substring
           [--plugin <path> [--set Name=value …]]…
 oxbow send-test [--out <name>] [--proto ndi|omt|syphon|spout|decklink]  # test pattern
 oxbow recv-probe --in <source> [--proto ndi|omt] [--dump out.ppm]
