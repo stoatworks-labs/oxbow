@@ -40,7 +40,20 @@ jobs:
 
       - name: Verify architectures (macOS)
         if: startsWith(matrix.name, 'macos')
-        run: lipo -archs build/oxbow | grep -q "x86_64 arm64" || { lipo -archs build/oxbow; exit 1; }
+        # Not `lipo … | grep -q`: Actions runs `shell: bash` as `bash -eo
+        # pipefail`, and a `grep -q` that FINDS its match exits at once, so lipo
+        # takes SIGPIPE and the pipeline reports failure -- which here trips the
+        # `||` and fails the release on a correct universal binary.
+        #
+        # The match is also no longer order-dependent. lipo does not promise the
+        # order it lists architectures in, and "x86_64 arm64" as a literal would
+        # reject a perfectly good binary listed the other way round.
+        run: |
+          __archs=$( lipo -archs build/oxbow )
+          case "$__archs" in
+            *x86_64*arm64*|*arm64*x86_64*) echo "universal: $__archs" ;;
+            *) echo "expected a universal binary, got: $__archs"; exit 1 ;;
+          esac
 
       - name: Package
         shell: bash
