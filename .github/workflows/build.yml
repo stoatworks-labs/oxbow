@@ -9,6 +9,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual trigger. Added 2026-08-06 because GitHub stopped creating runs for
+  # this repo's pushes — workflows active, YAML valid, triggers correct, pushes
+  # registered, and every other repo in the fleet building normally — so there
+  # was no way to ask for a build at all. Touching the workflow file is also the
+  # usual way to make GitHub re-register a workflow that has got stuck.
+  workflow_dispatch:
 
 jobs:
   build:
