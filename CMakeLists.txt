@@ -63,6 +63,57 @@ elseif(WIN32)
   set_source_files_properties(${OXBOW_SPOUT_SOURCES} PROPERTIES COMPILE_OPTIONS "/w")
 endif()
 
+# --- DeckLink (optional) ------------------------------------------------------
+#
+# Blackmagic's SDK is not vendored: its licence is not ours to redistribute.
+# Point at an extracted copy and the output is compiled in.
+#
+# A developer machine often has several SDK copies at different versions sitting
+# inside other products — this Mac has a 10.11.2 set inside the NDI SDK's
+# examples and a 12.2 one inside Unreal's BlackmagicMedia. Anything below 11.0
+# lacks IDeckLinkProfileAttributes, so the version is checked rather than
+# assumed and the error says what to do about it.
+set(DECKLINK_SDK_DIR "" CACHE PATH "Blackmagic DeckLink SDK (enables the decklink output)")
+if(DECKLINK_SDK_DIR)
+  if(APPLE)
+    set(DECKLINK_PLATFORM Mac)
+  elseif(WIN32)
+    set(DECKLINK_PLATFORM Win)
+  else()
+    set(DECKLINK_PLATFORM Linux)
+  endif()
+
+  find_path(DECKLINK_INCLUDE_DIR DeckLinkAPI.h
+    HINTS "${DECKLINK_SDK_DIR}"
+    PATH_SUFFIXES "${DECKLINK_PLATFORM}/include" "include/${DECKLINK_PLATFORM}"
+                  "${DECKLINK_PLATFORM}" "Include/${DECKLINK_PLATFORM}" "include"
+    NO_DEFAULT_PATH)
+  if(NOT DECKLINK_INCLUDE_DIR)
+    message(FATAL_ERROR "No DeckLinkAPI.h under ${DECKLINK_SDK_DIR}")
+  endif()
+
+  file(STRINGS "${DECKLINK_INCLUDE_DIR}/DeckLinkAPIVersion.h" DECKLINK_VERSION_LINE
+       REGEX "BLACKMAGIC_DECKLINK_API_VERSION_STRING")
+  string(REGEX MATCH "([0-9]+)\\.([0-9]+)" DECKLINK_VERSION "${DECKLINK_VERSION_LINE}")
+  if(CMAKE_MATCH_1 AND CMAKE_MATCH_1 LESS 11)
+    message(FATAL_ERROR
+      "DeckLink SDK at ${DECKLINK_INCLUDE_DIR} is ${DECKLINK_VERSION}; 11.0 or newer "
+      "is required (IDeckLinkProfileAttributes). There is often a much older copy "
+      "bundled inside another product — point at the real SDK.")
+  endif()
+
+  target_sources(oxbow PRIVATE
+    src/io/decklink.cpp
+    "${DECKLINK_INCLUDE_DIR}/DeckLinkAPIDispatch.cpp")
+  set_source_files_properties("${DECKLINK_INCLUDE_DIR}/DeckLinkAPIDispatch.cpp"
+    PROPERTIES COMPILE_OPTIONS "-w")
+  target_include_directories(oxbow PRIVATE "${DECKLINK_INCLUDE_DIR}")
+  target_compile_definitions(oxbow PRIVATE OXBOW_WITH_DECKLINK)
+  message(STATUS "DeckLink output: enabled, SDK ${DECKLINK_VERSION} at ${DECKLINK_INCLUDE_DIR}")
+else()
+  message(STATUS "DeckLink output: disabled (set DECKLINK_SDK_DIR to enable)")
+endif()
+
 target_include_directories(oxbow PRIVATE
   src
   third_party/ffgl/source/lib

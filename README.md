@@ -27,6 +27,14 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
+The DeckLink output is off unless you point at Blackmagic's SDK, which is not
+vendored because its licence is not ours to redistribute:
+
+```
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+      -DDECKLINK_SDK_DIR="/path/to/Blackmagic DeckLink SDK"
+```
+
 ## Current commands
 
 ```
@@ -34,9 +42,9 @@ oxbow probe <plugin>                          # load a plugin, print metadata
 oxbow selftest <plugin> [--set Name=value …]  # instantiate offscreen, render frames, report
 oxbow list [--proto ndi|omt]                  # discover sources
 oxbow run --in <source> --out <name>          # the loop
-          [--in-proto ndi|omt] [--out-proto ndi|omt|syphon|spout]
+          [--in-proto ndi|omt] [--out-proto ndi|omt|syphon|spout|decklink]
           [--plugin <path> [--set Name=value …]]…
-oxbow send-test [--out <name>] [--proto ndi|omt|syphon|spout]  # test pattern
+oxbow send-test [--out <name>] [--proto ndi|omt|syphon|spout|decklink]  # test pattern
 oxbow recv-probe --in <source> [--proto ndi|omt] [--dump out.ppm]
 ```
 

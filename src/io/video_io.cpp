@@ -9,6 +9,10 @@
 #include "io/spout.h"
 #endif
 
+#if defined(OXBOW_WITH_DECKLINK)
+#include "io/decklink.h"
+#endif
+
 namespace oxbow {
 namespace {
 
@@ -20,12 +24,16 @@ constexpr const char* kReceiveProtocols = "ndi or omt";
 
 std::string sendProtocols() {
 #if defined(__APPLE__)
-  return "ndi, omt or syphon";
+  std::string list = "ndi, omt, syphon";
 #elif defined(_WIN32)
-  return "ndi, omt or spout";
+  std::string list = "ndi, omt, spout";
 #else
-  return "ndi or omt";
+  std::string list = "ndi, omt";
 #endif
+#if defined(OXBOW_WITH_DECKLINK)
+  list += ", decklink";
+#endif
+  return list;
 }
 
 }  // namespace
@@ -70,6 +78,19 @@ std::unique_ptr<VideoSender> createSender(const std::string& protocol,
     error = "spout output is Windows only";
     return nullptr;
   }
+
+#if defined(OXBOW_WITH_DECKLINK)
+  if (protocol == "decklink") return decklinkCreateSender(name, error);
+#else
+  if (protocol == "decklink") {
+    // Configured out, not missing: the SDK is Blackmagic's and cannot be
+    // vendored, so this build simply never had it.
+    error =
+        "this build has no DeckLink support - configure with "
+        "-DDECKLINK_SDK_DIR=/path/to/Blackmagic DeckLink SDK";
+    return nullptr;
+  }
+#endif
   error = "unknown protocol \"" + protocol + "\" (" + sendProtocols() + ")";
   return nullptr;
 }

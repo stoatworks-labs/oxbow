@@ -129,3 +129,41 @@ default name and the operator cannot find the name they typed.
 
 Unlike Syphon, there is no main-thread requirement — that constraint comes from
 NSDistributedNotificationCenter, not from sharing a surface.
+
+
+## DeckLink output
+
+`--out-proto decklink --out <index|name substring>`. Optional: compiled only
+with `-DDECKLINK_SDK_DIR=...`, and `createSender` says so rather than failing
+obscurely when it was left out.
+
+Scheduled playback, three frames of pre-roll, **8-bit BGRA straight onto the
+card** — oxbow's pump already holds BGRA and DeckLink accepts
+`bmdFormat8BitBGRA`, so unlike WebLinked there is no colour conversion in this
+path at all and no opportunity to get BT.709 wrong.
+
+**Never run against hardware.** It compiles against a real 12.2 SDK and its
+device enumeration reports correctly with no card attached; that is the whole
+of the evidence. Do not describe it as working.
+
+Things that will bite whoever tests it first:
+
+- **Frame lifetime.** The card takes its own reference at `ScheduleVideoFrame`;
+  ours is released in the completion callback. Releasing at schedule time frees
+  the buffer while the card is still reading it.
+- **Display times come from a frame counter, not the clock.** A late tick then
+  shortens the queue instead of scheduling into the past, which the card
+  rejects outright.
+- **Playback starts at pre-roll, not on the first frame.** Starting with one
+  frame in hand underflows immediately.
+- **Rates are compared as cross-multiplied rationals.** 59.94 is 60000/1001;
+  comparing as doubles will match the wrong mode.
+- **`DoesSupportVideoMode` is asked as well as the mode iterator.** Enumeration
+  lists what the hardware knows, not what this connection and pixel format can
+  carry.
+- **Several SDK versions are usually on a machine.** This Mac has 10.11.2
+  inside the NDI SDK's examples and 12.2 inside Unreal's BlackmagicMedia; below
+  11.0 there is no `IDeckLinkProfileAttributes`, so CMake checks the version and
+  says so.
+
+No audio, and no keying. See the note at the head of `src/io/decklink.h`.
