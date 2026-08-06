@@ -52,10 +52,20 @@ void printInfo(const FfglInfo& info) {
   std::printf("inputs:      %u..%u\n", info.minInputs, info.maxInputs);
   std::printf("params:      %zu\n", info.params.size());
   for (const auto& param : info.params) {
-    std::printf("  [%2u] %-16s type=%-3u default=%g range=%g..%g %s\n",
+    std::printf("  [%2u] %-16s type=%-3u default=%g range=%g..%g %s",
                 param.index, param.name.c_str(), param.type,
                 param.defaultValue, param.rangeMin, param.rangeMax,
                 param.defaultText.c_str());
+    if (!param.group.empty()) std::printf(" group=%s", param.group.c_str());
+    std::printf("\n");
+
+    // Options are printed one per line rather than joined: a dropdown entry
+    // may contain spaces, commas or both, and a run-together list is exactly
+    // as misleading as no list at all.
+    for (size_t e = 0; e < param.elements.size(); ++e) {
+      std::printf("        - %-20s = %g\n", param.elements[e].c_str(),
+                  e < param.elementValues.size() ? param.elementValues[e] : 0.0f);
+    }
   }
 }
 

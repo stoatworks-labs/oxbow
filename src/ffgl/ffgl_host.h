@@ -18,6 +18,17 @@ struct FfglParam {
   std::string defaultText;// For FF_TYPE_TEXT / FF_TYPE_FILE.
   float rangeMin = 0;     // FF_GET_RANGE; 0..1 when unsupported.
   float rangeMax = 1;
+
+  /// The plugin's own grouping for this parameter, or empty. Hosts that can
+  /// show sections (Resolume, OBS) use it; the CLI ignores it.
+  std::string group;
+
+  /// FF_TYPE_OPTION only — the dropdown's entries and the value each one
+  /// stands for. Empty for every other type, deliberately: the SDK answers
+  /// FF_GET_NUM_PARAMETER_ELEMENTS with 1 for *any* parameter, so a host that
+  /// does not gate on the type turns every slider into a one-item dropdown.
+  std::vector<std::string> elements;
+  std::vector<float> elementValues;
 };
 
 struct FfglInfo {

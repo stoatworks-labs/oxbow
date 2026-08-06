@@ -188,6 +188,48 @@ bool FfglLibrary::probe(std::string& error) {
       param.rangeMin = range.range.min;
       param.rangeMax = range.range.max;
     }
+
+    // FF_GET_PARAM_GROUP is a fill-my-buffer call, not a give-me-a-pointer
+    // one: the host supplies the storage and the plugin memcpys into it,
+    // **without** a terminating nul. Its neighbours all return a char*, so
+    // the two conventions look identical at the call site — and passing an
+    // index where the struct pointer belongs is not a type error inside an
+    // FFMixed. It compiles, then reads maxToWrite from address 11.
+    {
+      char groupBuffer[64] = {};
+      GetStringStruct getGroup = {};
+      getGroup.parameterNumber = i;
+      getGroup.stringBuffer.address = groupBuffer;
+      getGroup.stringBuffer.maxToWrite = sizeof(groupBuffer) - 1;
+      if (call(FF_GET_PARAM_GROUP, pointerMixed(&getGroup), nullptr).UIntValue ==
+          FF_SUCCESS) {
+        param.group = groupBuffer;
+      }
+    }
+
+    // Gate on FF_TYPE_OPTION. FF_GET_NUM_PARAMETER_ELEMENTS answers **1 for
+    // every parameter** — the SDK keeps the current value as element 0 — so
+    // asking every parameter would make each one look like a one-entry
+    // dropdown.
+    if (param.type == FF_TYPE_OPTION) {
+      const uint32_t elements =
+          call(FF_GET_NUM_PARAMETER_ELEMENTS, uintMixed(i), nullptr).UIntValue;
+      for (uint32_t e = 0; e < elements; ++e) {
+        GetParameterElementNameStruct elementName = {i, e};
+        const char* text = static_cast<const char*>(
+            call(FF_GET_PARAMETER_ELEMENT_NAME, pointerMixed(&elementName),
+                 nullptr)
+                .PointerValue);
+        param.elements.push_back(text ? text
+                                      : "Option " + std::to_string(e));
+
+        GetParameterElementValueStruct elementValue = {i, e};
+        param.elementValues.push_back(mixedToFloat(call(
+            FF_GET_PARAMETER_ELEMENT_VALUE, pointerMixed(&elementValue),
+            nullptr)));
+      }
+    }
+
     info_.params.push_back(std::move(param));
   }
   return true;
