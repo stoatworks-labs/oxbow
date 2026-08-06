@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <thread>
 
+#include "app/main_loop.h"
+
 #include "app/pump.h"
 #include "control/control_api.h"
 #include "diag/diag.h"
@@ -44,7 +46,9 @@ int runPump(const PumpOptions& options) {
 
   auto lastReport = std::chrono::steady_clock::now();
   while (!stopRequested() && pump.running()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    // Servicing the run loop, not sleeping: a Syphon output creates its
+    // server by dispatching to the main thread. See app/main_loop.h.
+    waitServicingMainLoop(0.2);
     const auto now = std::chrono::steady_clock::now();
     if (now - lastReport >= std::chrono::seconds(5)) {
       const Pump::Status status = pump.status();

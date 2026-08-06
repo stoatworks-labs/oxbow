@@ -12,6 +12,8 @@
 
 #include "app/pump.h"
 
+#include "app/main_loop.h"
+
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -471,8 +473,13 @@ int runTestSender(const std::string& protocol, const std::string& outName) {
     }
     sender->sendVideo(pixels.data(), kWidth, kHeight, 60000, 1000, -1);
     ++frame;
+    // Paced by servicing the main run loop rather than sleeping on it: this
+    // loop *is* the main thread, and a Syphon output dispatches its server
+    // creation here. See app/main_loop.h.
     const auto next = start + frame * std::chrono::nanoseconds(16666667);
-    std::this_thread::sleep_until(next);
+    const double remaining =
+        std::chrono::duration<double>(next - std::chrono::steady_clock::now()).count();
+    waitServicingMainLoop(remaining);
   }
   std::printf("send-test: stopped after %llu frames\n",
               (unsigned long long)frame);

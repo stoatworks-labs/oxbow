@@ -74,3 +74,37 @@ as an input. One added round trip ≈ 3–6 frames.
   and `…/tinsel/build/Tinsel.bundle` — both must PASS.
 - Param plumbing: `./build/oxbow selftest "…/downpour/build/Downpour Over.bundle" --set 'Background Opaci=0' --set 'Density=0'`
   → rgb sum jumps by ~20× (input ramp showing through) versus default run.
+
+
+## Syphon output (macOS)
+
+`--out-proto syphon` publishes the chain's output as a Syphon server, so a
+consumer on the same machine — OBS, Resolume, VDMX — picks it up with no network
+round trip. Vendored server subset in `third_party/syphon` (BSD-3), lifted from
+WebLinked along with `src/io/syphon.mm`.
+
+**The server must be created on the main thread.** `SyphonServerBase` registers
+for the announce-request notification in `-init`, and
+NSDistributedNotificationCenter delivers those on the **main** run loop. This
+was measured, not assumed: created on a private CFRunLoop thread the server is
+perfectly well-formed — right name, right UUID, SyphonSurfaceTypeIOSurface — it
+announces itself, and it is then invisible to every consumer. The identical code
+on the main thread is found immediately by the same probe. A private run loop
+kept alive with a zeroed `CFRunLoopSourceContext` is doubly wrong: version 0
+with a NULL `perform` is not a source CFRunLoop stays alive for, so it fails
+silently too.
+
+That is why `app/main_loop.h` exists. oxbow has no run loop of its own, so every
+place the main thread waits calls `waitServicingMainLoop` instead of sleeping —
+`runPump`'s poll and `runTestSender`'s frame pacing. **A plain `sleep` on the
+main thread will deadlock the `dispatch_sync` that the frame thread uses to
+create the server.** If you add another main-thread wait, use that helper.
+
+A CLI also has to link **AppKit** explicitly: Syphon uses `NSRunningApplication`
+for the server description, which WebLinked got for free by being a `.app`.
+
+Verified end to end against two independent implementations, neither of them
+this code: WebLinked's `tools/syphon_probe.mm`, which links **Resolume Arena's
+bundled Syphon 5**, receives a 1280x720 frame; and **OBS's own `syphon-input`
+source** lists `[oxbow] OxbowSyphon` and renders the colour bars in the right
+order, which is also the check that BGRA is not channel-swapped.
