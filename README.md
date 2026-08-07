@@ -14,6 +14,8 @@ is a standalone FFGL host with NDI/OMT video in and out: route a source out of
 your mixer, through a chain of FFGL plugins, and back in — like an oxbow, a
 loop in the river.
 
+**Video:** [What it does, in 50 seconds](https://www.youtube.com/watch?v=10mzzLkna0U)
+
 **Status: early development.** The FFGL host core works (verified against nine
 real plugins) and the frame pump runs at 60 fps over **NDI and OMT, in any
 combination per side** — NDI→NDI, OMT→OMT, and NDI→OMT all verified end to
