@@ -22,6 +22,36 @@ combination per side** — NDI→NDI, OMT→OMT, and NDI→OMT all verified end 
 end. Chain configuration and the web UI are in progress. macOS first, Windows
 to follow.
 
+<!-- downloads:start -->
+
+## Download
+
+**[v0.1.0](https://github.com/stoatworks-labs/oxbow/releases/tag/v0.1.0)** — prebuilt for macOS and Windows. Pick your platform:
+
+<details>
+<summary><b>macOS</b> — Universal (Apple Silicon + Intel)</summary>
+
+| Build | Download | Size |
+| --- | --- | --- |
+| Universal (Apple Silicon + Intel) · .zip archive | [`oxbow-0.1.0-macos-universal.zip`](https://github.com/stoatworks-labs/oxbow/releases/download/v0.1.0/oxbow-0.1.0-macos-universal.zip) | 273 KB |
+
+</details>
+
+<details>
+<summary><b>Windows</b> — x64</summary>
+
+| Build | Download | Size |
+| --- | --- | --- |
+| x64 · .zip archive | [`oxbow-0.1.0-windows-x86_64.zip`](https://github.com/stoatworks-labs/oxbow/releases/download/v0.1.0/oxbow-0.1.0-windows-x86_64.zip) | 191 KB |
+
+</details>
+
+All builds, checksums and release notes: [github.com/stoatworks-labs/oxbow/releases](https://github.com/stoatworks-labs/oxbow/releases).
+
+macOS builds are signed and notarised and open normally. The Windows builds are unsigned, so SmartScreen warns once.
+
+<!-- downloads:end -->
+
 ## Build
 
 ```
