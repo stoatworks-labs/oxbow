@@ -26,14 +26,14 @@ to follow.
 
 ## Download
 
-**[v0.1.0](https://github.com/stoatworks-labs/oxbow/releases/tag/v0.1.0)** — prebuilt for macOS and Windows. Pick your platform:
+**[v0.1.1](https://github.com/stoatworks-labs/oxbow/releases/tag/v0.1.1)** — prebuilt for macOS and Windows. Pick your platform:
 
 <details>
 <summary><b>macOS</b> — Universal (Apple Silicon + Intel)</summary>
 
 | Build | Download | Size |
 | --- | --- | --- |
-| Universal (Apple Silicon + Intel) · .zip archive | [`oxbow-0.1.0-macos-universal.zip`](https://github.com/stoatworks-labs/oxbow/releases/download/v0.1.0/oxbow-0.1.0-macos-universal.zip) | 273 KB |
+| Universal (Apple Silicon + Intel) · .zip archive | [`oxbow-0.1.1-macos-universal.zip`](https://github.com/stoatworks-labs/oxbow/releases/download/v0.1.1/oxbow-0.1.1-macos-universal.zip) | 273 KB |
 
 </details>
 
@@ -42,7 +42,7 @@ to follow.
 
 | Build | Download | Size |
 | --- | --- | --- |
-| x64 · .zip archive | [`oxbow-0.1.0-windows-x86_64.zip`](https://github.com/stoatworks-labs/oxbow/releases/download/v0.1.0/oxbow-0.1.0-windows-x86_64.zip) | 191 KB |
+| x64 · .zip archive | [`oxbow-0.1.1-windows-x86_64.zip`](https://github.com/stoatworks-labs/oxbow/releases/download/v0.1.1/oxbow-0.1.1-windows-x86_64.zip) | 191 KB |
 
 </details>
 
