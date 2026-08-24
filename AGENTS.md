@@ -203,3 +203,10 @@ sub-devices, after which all four connectors worked.
 
 `dl_profile` **writes to the card and the change persists** for every
 application, which is why it is a separate tool rather than a flag on the probe.
+
+## Notes
+
+`docs/NOTES.md` carries this repo's working notes — current status, decisions
+already made, and the traps that have actually bitten. Read it before changing
+anything non-obvious. Cross-cutting fleet knowledge lives in
+[fleet-notes](https://github.com/stoatworks-labs/fleet-notes).
