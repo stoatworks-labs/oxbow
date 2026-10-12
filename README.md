@@ -3,9 +3,9 @@
 > **AI-assisted project.** This codebase was created with [Claude](https://claude.com/claude-code)
 > (Anthropic), directed and reviewed by a human author. The FFGL host core is
 > checked against nine real third-party plugins, and the frame pump has been
-> measured at 60 fps end to end over NDI→NDI, OMT→OMT and NDI→OMT. Chain
-> configuration and the web UI are still in progress, so read the status below
-> before relying on any of it.
+> measured at 60 fps end to end over NDI→NDI, OMT→OMT and NDI→OMT. It hasn't
+> been run in a real vMix loop yet, so read the status below before relying on
+> any of it.
 
 FFGL effects for hosts that have no video plugin interface.
 
@@ -19,9 +19,11 @@ a loop in the river.
 **Status: early development.** The FFGL host core works (checked against nine
 real plugins) and the frame pump runs at 60 fps over **NDI and OMT, in any
 combination per side**: NDI→NDI, OMT→OMT and NDI→OMT are all checked end to
-end. Chain configuration and the web UI are in progress. Every release has a
-Windows x64 build, but on Windows it's only been run in a Parallels VM on a Mac
-(x64 emulation), and the Spout output has never run.
+end. Chain configuration and the control page are built and checked: a
+two-effect chain from a config file ran at 61 fps over NDI→OMT, and a slider on
+the page changed the output live. It hasn't been run in a real vMix loop yet.
+Every release has a Windows x64 build, but on Windows it's only been run in a
+Parallels VM on a Mac (x64 emulation), and the Spout output has never run.
 
 <!-- downloads:start -->
 
