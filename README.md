@@ -19,8 +19,9 @@ a loop in the river.
 **Status: early development.** The FFGL host core works (checked against nine
 real plugins) and the frame pump runs at 60 fps over **NDI and OMT, in any
 combination per side**: NDI→NDI, OMT→OMT and NDI→OMT are all checked end to
-end. Chain configuration and the web UI are in progress. macOS first, Windows
-to follow.
+end. Chain configuration and the web UI are in progress. Every release has a
+Windows x64 build, but on Windows it's only been run in a Parallels VM on a Mac
+(x64 emulation), and the Spout output has never run.
 
 <!-- downloads:start -->
 
