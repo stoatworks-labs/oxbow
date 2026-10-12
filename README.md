@@ -2,23 +2,23 @@
 
 > **AI-assisted project.** This codebase was created with [Claude](https://claude.com/claude-code)
 > (Anthropic), directed and reviewed by a human author. The FFGL host core is
-> verified against nine real third-party plugins, and the frame pump has been
+> checked against nine real third-party plugins, and the frame pump has been
 > measured at 60 fps end to end over NDI→NDI, OMT→OMT and NDI→OMT. Chain
-> configuration and the web UI are still in progress — see the status below
+> configuration and the web UI are still in progress, so read the status below
 > before relying on any of it.
 
 FFGL effects for hosts that have no video plugin interface.
 
-vMix, OBS, and most broadcast software cannot load video effect plugins. oxbow
+vMix, OBS and most broadcast software can't load video effect plugins. oxbow
 is a standalone FFGL host with NDI/OMT video in and out: route a source out of
-your mixer, through a chain of FFGL plugins, and back in — like an oxbow, a
-loop in the river.
+your mixer, through a chain of FFGL plugins, and back in again, like an oxbow:
+a loop in the river.
 
 **Video:** [What it does, in 50 seconds](https://www.youtube.com/watch?v=10mzzLkna0U)
 
-**Status: early development.** The FFGL host core works (verified against nine
+**Status: early development.** The FFGL host core works (checked against nine
 real plugins) and the frame pump runs at 60 fps over **NDI and OMT, in any
-combination per side** — NDI→NDI, OMT→OMT, and NDI→OMT all verified end to
+combination per side**: NDI→NDI, OMT→OMT and NDI→OMT are all checked end to
 end. Chain configuration and the web UI are in progress. macOS first, Windows
 to follow.
 
@@ -59,8 +59,8 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-The DeckLink output is off unless you point at Blackmagic's SDK, which is not
-vendored because its licence is not ours to redistribute:
+The DeckLink output is off unless you point at Blackmagic's SDK, which isn't
+vendored because its licence isn't mine to redistribute:
 
 ```
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
@@ -87,7 +87,7 @@ oxbow recv-probe --in <source> [--proto ndi|omt] [--dump out.ppm]
 ## Control page
 
 `oxbow run --config file.json` with `"control": { "port": 8720 }` (or
-`--port 8720`) serves a live control page at `http://127.0.0.1:8720/` —
+`--port 8720`) serves a live control page at `http://127.0.0.1:8720/` with
 status, the chain, and a slider per parameter, applied on the frame thread
 between frames. The JSON API underneath:
 
@@ -97,16 +97,16 @@ POST /api/param?effect=0&name=Mix&value=0.5
 GET  /api/sources?proto=ndi|omt
 ```
 
-Binds loopback by default; set `"bind"` to expose it and understand what that
-means on your network.
+It binds loopback by default. Set `"bind"` to expose it, and understand what
+that means on your network first.
 
 ## Runtimes
 
 Neither transport library is linked or bundled; both are found at run time:
 
-- **NDI**: install the NDI runtime (or Tools/SDK) from ndi.video. Not bundled
-  because the NDI licence is incompatible with this repository's MIT terms.
-- **OMT**: MIT — grab the binaries from
+- **NDI**: install the NDI runtime (or Tools/SDK) from ndi.video. It isn't
+  bundled because the NDI licence is incompatible with this repository's MIT terms.
+- **OMT**: MIT. Grab the binaries from
   [libomtnet releases](https://github.com/openmediatransport/libomtnet/releases)
   and put `libomt`, `libvmx`, and `libomtnet.dll` together on the library
   path (or point `DYLD_LIBRARY_PATH`/`PATH` at them). Set `OXBOW_OMT_LOG=1`
@@ -114,7 +114,7 @@ Neither transport library is linked or bundled; both are found at run time:
 
 ## Documentation
 
-[docs/USER-GUIDE.md](docs/USER-GUIDE.md) — setup, the vMix loop, config
+[docs/USER-GUIDE.md](docs/USER-GUIDE.md): setup, the vMix loop, config
 reference, control API, latency, troubleshooting.
 
 <!-- attributions:start -->
