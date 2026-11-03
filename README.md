@@ -9,6 +9,8 @@
 
 FFGL effects for hosts that have no video plugin interface.
 
+The [project page](https://stoatworks-labs.com/software/oxbow/) has the downloads, the [user guide](https://stoatworks-labs.com/software/oxbow/guide/) and the video.
+
 vMix, OBS and most broadcast software can't load video effect plugins. oxbow
 is a standalone FFGL host with NDI/OMT video in and out: route a source out of
 your mixer, through a chain of FFGL plugins, and back in again, like an oxbow:
