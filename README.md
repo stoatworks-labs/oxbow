@@ -38,7 +38,7 @@ Parallels VM on a Mac (x64 emulation), and the Spout output has never run.
 
 | Build | Download | Size |
 | --- | --- | --- |
-| Universal (Apple Silicon + Intel) · .zip archive | [`oxbow-0.1.3-macos-universal.zip`](https://github.com/stoatworks-labs/oxbow/releases/download/v0.1.3/oxbow-0.1.3-macos-universal.zip) | 273 KB |
+| Universal (Apple Silicon + Intel) · .zip archive | [`oxbow-0.1.3-macos-universal.zip`](https://github.com/stoatworks-labs/oxbow/releases/download/v0.1.3/oxbow-0.1.3-macos-universal.zip) | 274 KB |
 
 </details>
 
