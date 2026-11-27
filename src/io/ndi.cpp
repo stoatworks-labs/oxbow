@@ -13,8 +13,6 @@
 
 #include "io/ndi.h"
 
-#include <algorithm>
-#include <cctype>
 #include <cstring>
 #include <mutex>
 
@@ -22,6 +20,7 @@
 #include <Processing.NDI.Lib.h>
 
 #include "core/dylib.h"
+#include "io/source_wait.h"
 
 namespace oxbow {
 namespace {
@@ -138,13 +137,40 @@ class NdiRuntime {
   std::string error_;
 };
 
-bool nameContains(const std::string& haystack, const std::string& needle) {
-  auto lower = [](std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-    return s;
+// One finder for the length of `waitMs`, waited on until the deadline (see
+// io/source_wait.h for why one wait is not enough), or until `enough` accepts
+// the list.
+bool findSources(const NdiApi* api, unsigned waitMs,
+                 const SourcesWanted& enough, std::vector<SourceInfo>& found,
+                 std::string& error) {
+  NDIlib_find_create_t createSettings = {};
+  createSettings.show_local_sources = true;
+  NDIlib_find_instance_t finder = api->find_create_v2(&createSettings);
+  if (!finder) {
+    error = "NDIlib_find_create_v2 failed";
+    return false;
+  }
+  SourceWaitOps ops;
+  ops.waitForChange = [api, finder](unsigned ms) {
+    return api->find_wait_for_sources(finder, ms);
   };
-  return lower(haystack).find(lower(needle)) != std::string::npos;
+  // The SDK's strings live only until the next call, so they are copied out.
+  ops.current = [api, finder] {
+    uint32_t count = 0;
+    const NDIlib_source_t* sources =
+        api->find_get_current_sources(finder, &count);
+    std::vector<SourceInfo> result;
+    for (uint32_t i = 0; sources && i < count; ++i) {
+      SourceInfo source;
+      if (sources[i].p_ndi_name) source.name = sources[i].p_ndi_name;
+      if (sources[i].p_url_address) source.url = sources[i].p_url_address;
+      result.push_back(std::move(source));
+    }
+    return result;
+  };
+  found = waitForSources(ops, waitMs, enough);
+  api->find_destroy(finder);
+  return true;
 }
 
 class NdiReceiverImpl final : public VideoReceiver {
@@ -158,14 +184,16 @@ class NdiReceiverImpl final : public VideoReceiver {
     api_ = NdiRuntime::acquire(error);
     if (!api_) return false;
 
-    std::vector<SourceInfo> sources = ndiListSources(waitMs, error);
-    const SourceInfo* match = nullptr;
-    for (const SourceInfo& source : sources) {
-      if (nameContains(source.name, nameSubstring)) {
-        match = &source;
-        break;
-      }
-    }
+    // Stops as soon as the wanted source appears, so a local one connects at
+    // once while a remote one still gets the whole window to be heard.
+    std::vector<SourceInfo> sources;
+    if (!findSources(api_, waitMs,
+                     [&nameSubstring](const std::vector<SourceInfo>& seen) {
+                       return findSource(seen, nameSubstring) != nullptr;
+                     },
+                     sources, error))
+      return false;
+    const SourceInfo* match = findSource(sources, nameSubstring);
     if (!match) {
       error = "no NDI source matching \"" + nameSubstring + "\" (saw " +
               std::to_string(sources.size()) + " sources)";
@@ -319,25 +347,8 @@ class NdiSenderImpl final : public VideoSender {
 std::vector<SourceInfo> ndiListSources(unsigned waitMs, std::string& error) {
   const NdiApi* api = NdiRuntime::acquire(error);
   if (!api) return {};
-
-  NDIlib_find_create_t createSettings = {};
-  createSettings.show_local_sources = true;
-  NDIlib_find_instance_t finder = api->find_create_v2(&createSettings);
-  if (!finder) {
-    error = "NDIlib_find_create_v2 failed";
-    return {};
-  }
-  api->find_wait_for_sources(finder, waitMs);
-  uint32_t count = 0;
-  const NDIlib_source_t* sources = api->find_get_current_sources(finder, &count);
   std::vector<SourceInfo> result;
-  for (uint32_t i = 0; i < count; ++i) {
-    SourceInfo source;
-    if (sources[i].p_ndi_name) source.name = sources[i].p_ndi_name;
-    if (sources[i].p_url_address) source.url = sources[i].p_url_address;
-    result.push_back(std::move(source));
-  }
-  api->find_destroy(finder);
+  findSources(api, waitMs, {}, result, error);
   return result;
 }
 

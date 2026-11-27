@@ -63,6 +63,17 @@ as an input. One added round trip ≈ 3–6 frames.
 - NDI's bottom-up receive format (`BGRX_BGRA_flipped`) is **Windows-only** —
   guarded by `#ifdef _WIN32` in the SDK header. Everywhere else frames arrive
   top-down and the pump flips at ingest.
+- **`NDIlib_find_wait_for_sources` returns when the list CHANGES, not at its
+  timeout.** Local senders are announced first, so a single wait returns
+  holding only those, and a sender on another machine is missed whenever any
+  local one exists: `list` showed only local sources and `--in "<remote>"`
+  failed with "no NDI source matching". Found 2026-11-27 between this Mac and
+  a Windows VM on the LAN. `io/source_wait.cpp` waits again with the time
+  left until the deadline, and the receiver stops early once its source
+  appears; `tests/test_source_wait.cpp` pins it with a fake that behaves the
+  same way and fails 12 checks against the old single wait. So `oxbow list`
+  always takes its full 3 s. **OMT's listing has the same shape** — it returns
+  at the first non-empty list — and has not been changed.
 - OMT testing on this Mac: runtime staged at `build/omt-runtime/`; run with
   `DYLD_LIBRARY_PATH=$PWD/build/omt-runtime`. `OXBOW_OMT_LOG=1` turns on
   libomt's internal log.
@@ -70,6 +81,7 @@ as an input. One added round trip ≈ 3–6 frames.
 ## Verify
 
 - Build: `cmake --build build`
+- Unit tests (no SDK, no network): `ctest --test-dir build --output-on-failure`
 - Known-good run: `./build/oxbow selftest ~/Projects/downpour/build/Downpour.bundle`
   and `…/tinsel/build/Tinsel.bundle` — both must PASS.
 - Param plumbing: `./build/oxbow selftest "…/downpour/build/Downpour Over.bundle" --set 'Background Opaci=0' --set 'Density=0'`

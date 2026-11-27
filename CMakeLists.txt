@@ -21,8 +21,22 @@ add_executable(oxbow
   src/ffgl/ffgl_host.cpp
   src/io/ndi.cpp
   src/io/omt.cpp
+  src/io/source_wait.cpp
   src/io/video_io.cpp
 )
+
+# --- Tests --------------------------------------------------------------------
+#
+# Only what can be reached without an SDK, a GPU or a network. Anything that
+# decides something belongs in a file like source_wait.cpp, with no SDK
+# include, so a test can link it on its own.
+enable_testing()
+add_executable(test_source_wait tests/test_source_wait.cpp src/io/source_wait.cpp)
+target_include_directories(test_source_wait PRIVATE src)
+if(MSVC)
+  target_compile_options(test_source_wait PRIVATE /utf-8)
+endif()
+add_test(NAME source_wait COMMAND test_source_wait)
 
 if(APPLE)
   target_sources(oxbow PRIVATE src/gl/gl_context_mac.cpp)

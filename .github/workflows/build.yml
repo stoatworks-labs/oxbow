@@ -38,6 +38,9 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
+      - name: Unit tests (no SDK, no network)
+        run: ctest --test-dir build -C Release --output-on-failure
+
       - name: Smoke test (no plugin, no network)
         shell: bash
         run: |
